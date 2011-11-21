@@ -1,0 +1,13 @@
+*.aux
+*.bbl
+*.blg
+*.log
+*.bst
+*.bak
+*~
+*.swp
+*.pyc
+*.bdf
+*.dat
+*.pidb
+last_result.png
