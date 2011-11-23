@@ -5,6 +5,6 @@ argparse
 pywin32
 pyserial
 ctypes
-git+ssh://marijn@siren.neuro.kuleuven.be/home/marijn/git/golem.git@marijn#egg=golem
-git+ssh://marijn@siren.neuro.kuleuven.be/home/marijn/git/psychic.git@marijn#egg=psychic
-git+ssh://marijn@siren.neuro.kuleuven.be/home/marijn/git/pyepoc.git@master#egg=pyepoc
+git+ssh://user@siren.neuro.kuleuven.be/data/data2_solaris/pool/EEG-BCI/git/golem.git@marijn#egg=golem
+git+ssh://user@siren.neuro.kuleuven.be/data/data2_solaris/pool/EEG-BCI/git/psychic.git@marijn#egg=psychic
+git+ssh://user@siren.neuro.kuleuven.be/data/data2_solaris/pool/EEG-BCI/git/pyepoc.git@master#egg=pyepoc
