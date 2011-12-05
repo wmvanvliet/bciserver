@@ -10,7 +10,7 @@ import scipy
 import cStringIO
 import base64
 
-from bci_exceptions import ClassifierException
+from ..bci_exceptions import ClassifierException
 
 class Classifier(threading.Thread):
     """ Implements an online SSVEP classifier.

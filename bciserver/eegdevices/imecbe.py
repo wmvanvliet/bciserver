@@ -7,16 +7,16 @@ import time
 import re
 import os
 
-from eegdevices import Recorder, precision_timer, DeviceError
+from . import Recorder, precision_timer, DeviceError
 from serial_reader import SerialReader
 
-class IMECNL(Recorder):
+class IMECBE(Recorder):
     """ 
-    Class to record from the IMEC-NL device. For more information, see the
+    Class to record from the IMEC-BE device. For more information, see the
     generic Recorder class.
     """
-    def __init__(self, port=None, buffer_size_seconds=0.5, bdf_file=None, timing_mode='begin_read_relative'):
-        """ Open the IMEC-NL device on the given port.
+    def __init__(self, port=None, test=False, buffer_size_seconds=0.5, bdf_file=None, timing_mode='smoothed_sample_rate'):
+        """ Open the IMEC-BE device on the given port.
 
         Keyword arguments:
         port:                On UNIX systems, a string containing the filename of the
@@ -24,6 +24,10 @@ class IMECNL(Recorder):
                              windows systems, a string in the form of COM# (e.g.
                              'COM1'). By default, autodetection of the port will be
                              attempted (which usually works).
+
+
+        test:                Set this to true to make the IMEC device output a
+                             test signal. Useful for debugging.
 
         buffer_size_seconds: The amount of seconds of data to read from the
                              IMEC device before it will be decoded. Defaults to
@@ -36,28 +40,38 @@ class IMECNL(Recorder):
 
         # Configuration of the device, this should not change often
         self.baudrate = 1000000
-        self.sample_rate = 1024
+        self.sample_rate = 1000
         self.nchannels = 8
-        self.samples_per_frame = 1
-        self.bytes_per_frame = 25
-        self.calibration_time = 10 # Signal takes 90 seconds to stabilize
-        self.physical_min = 0
-        self.physical_max = 65535
+        self.samples_per_frame = 2
+        self.bytes_per_frame = 27
+        self.handshake_command = bytes("\xFF\xFF\xFF")
+        self.handshake_response = bytes("\xEE\xEE")
+        self.test_mode_command = bytes("\x41")
+        self.start_measurement_command = bytes("\x20")
+        self.calibration_time = 10 # Signal takes 60 seconds to stabilize
+        self.physical_min = -625
+        self.physical_max = 624
         self.digital_min = 0
-        self.digital_max = 65535
+        self.digital_max = 4094
         self.gain = ((self.physical_max-self.physical_min) /
                      float(self.digital_max-self.digital_min))
-        self.feat_lab = ['Fz', 'Cz', 'CP1', 'CP2', 'P3', 'Pz', 'P4', 'Oz']
-        self.preamble = bytes('JEF')
-        self.frame_struct = struct.Struct('<3s4B8HBc')
+        self.feat_lab = ['Fz',
+                         'FCz',
+                         'Cz',
+                         'CP1',
+                         'CP2',
+                         'P3',
+                         'Pz',
+                         'P4']
 
         self.port = port
+        self.test = test
 
         self.reader = None
         self.serial = None
 
         # Configure logging
-        self.logger = logging.getLogger('IMEC-NL Recorder')
+        self.logger = logging.getLogger('IMEC Recorder')
 
         # Configuration of the generic recorder object
         Recorder.__init__(self, buffer_size_seconds, bdf_file, timing_mode)
@@ -65,7 +79,7 @@ class IMECNL(Recorder):
         self._reset()
 
     def _reset(self):
-        super(IMECNL, self)._reset()
+        super(IMECBE, self)._reset()
         self.last_frame = None
         self.remaining_data = bytes('')
         self.nsamples = 0
@@ -73,18 +87,19 @@ class IMECNL(Recorder):
     def _open(self):
         self.buffer_size_samples = int(self.buffer_size_seconds * self.sample_rate)
         self.buffer_size_frames = int(self.buffer_size_samples / float(self.samples_per_frame))
-        self.buffer_size = int( self.buffer_size_seconds*self.bytes_per_frame*(self.sample_rate/self.samples_per_frame) )
-
-        # Open serial port
+        self.buffer_size = self.buffer_size_frames * self.bytes_per_frame
+        
+        # Open serial port and perform handshake
         self.logger.debug('Opening serial port...')
 
         if self.port == None:
             self.serial = self._find_device()
+
         else:
             if os.name == 'posix':
                 ser = serial.serial_for_url(self.port,
                                             baudrate=self.baudrate,
-                                            timeout=0.5)
+                                            timeout=2*self.buffer_size_seconds)
 
                 ser.flowControl(False)
             else:
@@ -93,15 +108,23 @@ class IMECNL(Recorder):
                 if m != None:
                     ser = serial.serialwin32.Win32Serial( int(m.group(1))-1,
                                                           baudrate=self.baudrate,
-                                                          timeout=0.5)
+                                                          timeout=2*self.buffer_size_seconds)
                 else:
                     raise DeviceError('Invalid format for port, should be COM#.')
 
-            # Check the data
-            if self._detect_imecnl_data(ser):
+            ser.write(self.handshake_command)
+            if ser.read(len(self.handshake_response)) == self.handshake_response:
+                self.logger.info('Found IMEC-BE wireless EEG-device on serial port'
+                                 ' %s' % self.port)
+                self.serial = ser
+            else:
                 ser.close()
-                raise DeviceError('This does not look like the IMEC-NL device.')
-            self.serial = ser
+                raise DeviceError('IMEC wireless EEG-device not found on port %s' % self.port)
+
+        if self.test:
+            # Put the device in test mode
+            self.logger.info('Device in test mode')
+            self.serial.write(self.test_mode_command)
 
         # Set up buffers to hold data
         buffers = [bytearray(b"\x00" * self.buffer_size) for n in xrange(4)]
@@ -111,8 +134,16 @@ class IMECNL(Recorder):
         self.driftlog = open('drift.log', 'w')
         self.driftlog.write('Now, Target, Obtained, Drift, Cycle\n')
 
-        # Timestamp the beginning of the recording
+        # Start the measurement
+        self.serial.write(self.start_measurement_command)
+
+        # Drop the first 10 seconds of data. This will be garbage
         self._flush_buffer()
+        togo = 5000 * self.bytes_per_frame
+        while togo > 0 and self.running:
+            togo -= len(self.serial.read(togo))
+        self._flush_buffer()
+
         T0 = self.begin_read_time
 
         # Start the serial reader
@@ -121,6 +152,7 @@ class IMECNL(Recorder):
         return T0
 
     def _find_device(self):
+
         if os.name == 'posix':
             # Get a listing of the available USB->SERIAL devices
             possible_devices = [dev for dev in os.listdir('/dev') if dev.startswith('tty.')]
@@ -128,13 +160,15 @@ class IMECNL(Recorder):
                 try:
                     ser = serial.serial_for_url('/dev/%s' % dev,
                                             baudrate=self.baudrate,
-                                            timeout=2*self.buffer_size_seconds)
+                                            timeout=0.5)
                 except:
                     continue
 
                 try:
-                    if self._detect_imecnl_data(ser):
-                        self.logger.info('Found IMEC-NL wireless EEG-device on serial port /dev/%s' % dev)
+                    ser.write(self.handshake_command)
+                    if ser.read(len(self.handshake_response)) == self.handshake_response:
+                        ser.timeout = 2*self.buffer_size_seconds
+                        self.logger.info('Found IMEC-BE wireless EEG-device on serial port /dev/%s' % dev)
                         ser.flowControl(False)
                         return ser
                     else:
@@ -146,24 +180,25 @@ class IMECNL(Recorder):
             # Try the first 10 COM ports
             for i in range(10):
                 try:
-                    ser = serial.serialwin32.Win32Serial(i, baudrate=self.baudrate, timeout=2*self.buffer_size_seconds)
-                except Exception as e:
+                    ser = serial.serialwin32.Win32Serial(i, baudrate=self.baudrate, timeout=0.5)
+                except:
                     continue
 
                 try:
-                    if self._detect_imecnl_data(ser):
-                        self.logger.info('Found IMEC-NL wireless EEG-device on serial port COM%d' % (i+1))
+                    ser.write(self.handshake_command)
+                    if ser.read(len(self.handshake_response)) == self.handshake_response:
+                        ser.timeout = 2*self.buffer_size_seconds
+                        self.logger.info('Found IMEC-BE wireless EEG-device on serial port COM%d' % (i+1))
                         return ser
                     else:
                         ser.close()
-                except Exception as e:
+                except:
                     ser.close()
-                    raise
 
-        raise DeviceError('Could not find IMEC-NL device.')
+        raise DeviceError('Could not find IMEC-BE device.')
 
     def stop(self):
-        super(IMECNL, self).stop()
+        super(IMECBE, self).stop()
 
         try:
             self.reader.stop()
@@ -227,77 +262,39 @@ class IMECNL(Recorder):
 
         return recording
 
-    def _detect_imecnl_data(self, serial):
-        old_timeout = serial.timeout
-        detected = False
-
-        # Try to read 0.5 seconds of data
-        serial.timeout = 0.5
-
-        try:
-            data = serial.read( int(0.5*self.samples_per_frame*self.bytes_per_frame*self.sample_rate) )
-        except Exception as e:
-            # If anything goes wrong, give up
-            return False
-
+    def _raw_to_dataset(self, data):
+        """ Decodes a string of raw data read from the IMEC device into a Golem
+        dataset """
         num_bytes = len(data)
-        if num_bytes < self.bytes_per_frame:
-            return False
-
-        # Find frame markers
-        frames_found = 0
-        i = 0
-        while i < num_bytes-self.bytes_per_frame:
-            for j in range(i, num_bytes-self.bytes_per_frame):
-                # Data should begin with preamble ('JEF')
-                if data[j:j+3] != self.preamble:
-                    continue
-
-                # Next frame should also begin with preamble
-                if j < num_bytes-2*self.bytes_per_frame and data[j+self.bytes_per_frame:j+self.bytes_per_frame+3] != self.preamble:
-                    continue
-
-                frames_found += 1
-
-            i += j+self.bytes_per_frame
-
-        if frames_found > 10:
-            detected = True
-            
-        serial.timeout = old_timeout
-        return detected
-
-    def _raw_to_dataset(self, data_string):
-        """ Decodes a string of raw data read from the IMEC-NL device into a
-        Golem dataset """
-        num_bytes = len(data_string)
         self.logger.debug('Handling datapacket of length %d' % num_bytes)
 
         if num_bytes < self.bytes_per_frame:
             self.logger.warning('Data incomplete: read at least %d bytes before'
-                                'calling this function' % self.bytes_per_frame)
-            return [None, data_string]
+                                ' calling this function' % self.bytes_per_frame)
+            return [None, bytes('')]
 
         #data = struct.unpack('%dB' % num_bytes, data_string)
-        data = data_string
 
         # Construct dataset from the raw data
         samples = []
         first_frame = True
         i = 0
-        while i < num_bytes-self.bytes_per_frame:
-            # Search for the next frame. This frame should be right next to the frame
-            # we just parsed. But sometimes, the device inserts some bogus values between
-            # frames, which we need to skip
+        while i <= num_bytes-self.bytes_per_frame:
+            # Search for the next frame. This frame should be right next to the
+            # frame we just parsed. But sometimes, the device inserts some
+            # bogus values between frames, which we need to skip
             frame_found = False
             frame_index = i
-            for j in range(i, num_bytes-self.bytes_per_frame):
-                # Data should begin with preamble ('JEF')
-                if data[j:j+3] != self.preamble:
+            for j in range(i, num_bytes-self.bytes_per_frame+1):
+                # Data should begin with sync byte ('S' == 0x53)
+                if data[j] != 0x53:
                     continue
-
-                # Next frame should also begin with preamble
-                if j < num_bytes-2*self.bytes_per_frame and data[j+self.bytes_per_frame:j+self.bytes_per_frame+3] != self.preamble:
+                # Next frame should also begin with sync byte
+                if (j < num_bytes-2*self.bytes_per_frame and
+                   data[j+self.bytes_per_frame] != 0x53):
+                    continue
+                # Battery level should be between 120 and 165
+                if data[j+2] < 120 or data[j+2] > 165:
                     continue
 
                 frame_found = True
@@ -312,19 +309,24 @@ class IMECNL(Recorder):
                 break
 
             if first_frame:
+                self.logger.debug('First frame found on index %d, seq number '
+                                  '%d' % (i, data[i+1]))
                 first_frame = False
 
             frame = self._decode_frame(data[i:i+self.bytes_per_frame])
 
-            # Determine number of dropped frames
+            # Determine number of dropped frames. Note that if more than 255
+            # frames are dropped, this does not work.
             if self.last_frame == None:
                 dropped_frames = 0
             elif frame.seq > self.last_frame.seq:
                 dropped_frames = (frame.seq-1) - self.last_frame.seq
             elif frame.seq < self.last_frame.seq:
-                dropped_frames = (frame.seq+2**32) - self.last_frame.seq
+                dropped_frames = (frame.seq+255) - self.last_frame.seq
             else:
-                self.logger.warning('Data corrupt: duplicate sequence number in data packet (%d = %d), i was %d' % (self.last_frame.seq, frame.seq, i))
+                self.logger.warning('Data corrupt: duplicate frame number in '
+                                    'data packet (%d = %d), i was %d' %
+                                    (self.last_frame.seq, frame.seq, i))
                 # don't use this frame
                 i += self.bytes_per_frame
 
@@ -335,11 +337,15 @@ class IMECNL(Recorder):
             if dropped_frames > 0:
                 self.logger.warning('Dropped %d frames' % dropped_frames)
 
+                self.droppedframeslog.write('%f, %f, %d\n' %
+                                   (precision_timer(), self.last_fixed_id, dropped_frames))
+                self.droppedframeslog.flush()
+
             # Interpolate the dropped frames if possible
             for j in range(1, dropped_frames+1):
                 if self.last_frame != None:
-                    inter = ( self.last_frame.X[:,0] +
-                              j * (frame.X[:,0]-self.last_frame.X[:,0]) /
+                    inter = ( self.last_frame.X[:,1] +
+                              j * (frame.X[:,0]-self.last_frame.X[:,1]) /
                               float(dropped_frames+1) )
                     samples.append(numpy.vstack((inter, inter)).T)
                 else:
@@ -351,10 +357,8 @@ class IMECNL(Recorder):
 
             i += self.bytes_per_frame
 
-        # Check whether any data has been decoded
         if len(samples) == 0:
-            self.logger.warning('Data corrupt: no valid frames found in data packet')
-            return (None, bytes(''))
+            return (None, data)
 
         X = numpy.hstack(samples)[self.target_channels,:]
         Y = numpy.zeros([1, X.shape[1]])
@@ -363,19 +367,33 @@ class IMECNL(Recorder):
         self.logger.debug('Number of bytes parsed: %d' % i)
         d = golem.DataSet(X=X, Y=Y, I=I, feat_lab=self.feat_lab)
 
-        return (d, data_string[i:])
+        return (d, data[i:])
 
     def _decode_frame(self, data):
         """ Decodes a single frame of data read from the IMEC device.
         """
-        preamble, seq1, seq2, seq3, seq4, chan1, chan2, chan3, chan4, chan5, chan6, chan7, chan8, mode, event = self.frame_struct.unpack(data)
-        seq = seq1 + 256*seq2 + 65536*seq3 + 16777216*seq4
-        X = numpy.atleast_2d(numpy.array([chan1, chan2, chan3, chan4, chan5, chan6, chan7, chan8])).T
+        frame = Frame(seq=data[1], volt=data[2])
 
-        return Frame(seq=seq, mode=mode, event=event, X=X)
+        i = 3
+        X = []
+        for sample in range(0, self.samples_per_frame):
+            x = []
+            for channel in range(8):
+                    if channel % 2 == 0:
+                        # even channels
+                        x.append( (data[i] & 0xff) + ((data[i+1] << 4) & 0xf00) )# - 2048
+                        i += 1
+                    else:
+                        # uneven channels
+                        x.append( ((data[i] << 8) & 0x0f00) + (data[i+1] & 0xff) )# - 2048
+                        i += 2
+            X.append(x)
+
+        frame.X = numpy.vstack(X).T
+        return frame
 
     def _flush_buffer(self):
-        """ Flush data in EPOC buffer """
+        """ Flush data in buffer """
         self.begin_read_time = precision_timer()
         self.serial.flushInput()
 
@@ -395,60 +413,54 @@ class IMECNL(Recorder):
         self.bdf_writer.append_status_channel()
 
     def set_parameter(self, name, values):
-        if super(IMECNL, self).set_parameter(name, values):
+        if super(IMECBE, self).set_parameter(name, values):
             return True
 
         if self.running:
             raise DeviceError('Cannot set parameter because the device is already opened.')
 
-        if name == 'buffer_size_seconds':
-            if len(values) < 1 or (type(values[0]) != float and type(values[0]) != int):
-                raise DeviceError('invalid value for buffer size.')
-            self.buffer_size_seconds = values[0]
-            return True
-
-        elif name == 'timing_mode':
-            if len(values) < 1:
-                raise DeviceError('missing value for timing_mode.')
-            
-            if values[0] in ['fixed', 'end_read_relative', 'estimated_sample_rate', 'smoothed_sample_rate', 'begin_read_relative']:
-                self.timing_mode = values[0]
-                return True
-            else:
-                raise DeviceError('invalid value for timing_mode.')
-
-        elif name == 'port':
+        if name == 'port':
             if len(values) < 1:
                 raise DeviceError('missing value for port.')
 
             self.port = values[0]
             return True
 
+        elif name == 'test':
+            if len(values) < 1:
+                raise DeviceError('missing value for test.')
+
+            if values[0] != 1 and values[0] != 0:
+                raise DeviceError('invalid value for test (1 or 0 allowed).')
+
+            self.test = values[0] == 1
+            return True
+
         else:
             return False
 
     def get_parameter(self, name):
-        value = super(IMECNL, self).get_parameter(name)
+        value = super(IMECBE, self).get_parameter(name)
         if value:
             return value
 
         if name == 'port':
             return self.port
+        elif name == 'test':
+            return self.test
         else:
             return False
 
 class Frame:
-    """ Contains information about a frame, recorded from the IMEC-NL device.
-    Frame.seq:  the sequence number 
-    Frame.mode: the voltage of the battery (0 = 0V, 255 = 5.1V)
-    Frame.event: event related byte ('0' or '1')
-    Frame.X:   a (channels x sample) numpy array containing the data
+    """ Contains information about a frame, recorded from the IMEC device.
+    Frame.seq:  the sequence number % 255
+    Frame.volt: the voltage of the battery (0 = 0V, 255 = 5.1V)
+    Frame.X:    a (channels x samples) numpy array containing the data
     """
-    def __init__(self, seq=-1, mode=-1, event=-1, X=[]):
+    def __init__(self, seq=-1, volt=-1, X=[]):
         self.seq = seq
-        self.mode = mode
-        self.event = event
+        self.volt = volt
         self.X = X
 
     def __repr__(self):
-        return 'Frame (%d)<mode: %d, event: %s, X:%s>' % (self.seq, self.mode, self.event, self.X)
+        return 'Frame (%d)<volt: %d, X:%s>' % (self.seq, self.volt, self.X)

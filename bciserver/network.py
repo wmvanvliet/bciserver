@@ -92,7 +92,7 @@ class ClientHandler:
 
     def sendLine(self, line):
         self.logger.debug('Sending message: %s' % line)
-        self.socket.sendall(line + '\n')
+        self.socket.sendall(line + '\r\n')
 
     def lineReceived(self, line):
         self.logger.debug('Received message: %s' % line)

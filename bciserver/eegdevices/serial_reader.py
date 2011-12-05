@@ -4,7 +4,7 @@ import collections
 import sys
 import time
 
-from eegdevices import precision_timer
+from . import precision_timer
 
 class SerialReader(threading.Thread):
     def __init__(self, serial, buffers):

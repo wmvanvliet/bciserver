@@ -2,7 +2,7 @@ import logging
 import numpy
 import golem
 import time
-from eegdevices import Recorder, precision_timer, DeviceError
+from . import Recorder, precision_timer, DeviceError
 
 class Emulator(Recorder):
     """ Class that emulates EEG signals. Use this to build and test your

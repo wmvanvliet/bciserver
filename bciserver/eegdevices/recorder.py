@@ -5,7 +5,8 @@ import psychic
 import numpy
 import logging
 import collections
-from eegdevices import precision_timer
+
+from . import precision_timer
 
 class DeviceError(Exception):
     def __init__(self, msg):
@@ -60,7 +61,6 @@ class Recorder(threading.Thread):
                                           'smoothed_sample_rate',
                                           'begin_read_relative']
         """
-
         threading.Thread.__init__(self)
         self.deamon = True
 
@@ -85,6 +85,7 @@ class Recorder(threading.Thread):
         # Channel selection
         self.target_channels = range(self.nchannels)
 
+        self.file_output = False
         self.running = False
         self._reset()
 
