@@ -119,7 +119,7 @@ class Classifier(threading.Thread):
 
         # Extract trials
         d = self._extract_training_trials(d)
-        d2 = psychic.nodes.Blowup(1000).apply(d)
+        d2 = psychic.nodes.Blowup(100).apply(d)
         d2 = psychic.nodes.Mean(axis=2).apply(d2)
 
         # Train classifier

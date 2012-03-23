@@ -92,8 +92,7 @@ class Recorder(threading.Thread):
     def _reset(self):
         """ Resets the recorder. Flushes all data and markers. """
         self.last_frame = None
-        self.last_fixed_id = 0
-        self.last_smoothed_id = 0
+        self.last_id = 0
         self.data = None
         self.capture_data = False
 
@@ -220,8 +219,7 @@ class Recorder(threading.Thread):
         # timestamp of the first data packet
         self.T0 = self._open()
 
-        self.last_fixed_id = 0
-        self.last_smoothed_id = 0
+        self.last_id = 0
 
         while self.running:
             try:
@@ -273,36 +271,48 @@ class Recorder(threading.Thread):
         self.estimated_sample_rates.append(estimated_sample_rate)
         smoothed_sample_rate = numpy.mean(self.estimated_sample_rates)
 
+        relative_begin_read_time = self.begin_read_time - self.T0
+
         self.logger.debug('dt: %f, estimated sample rate: %f, smoothed sample rate: %f' % (dt, estimated_sample_rate, smoothed_sample_rate))
 
         I = numpy.atleast_2d( numpy.arange(1, nsamples+1, dtype=numpy.float ) )
 
         if self.timing_mode == 'fixed':
             t = I/float(self.sample_rate)
-            t += self.last_fixed_id
-            self.last_fixed_id = t[0,-1]
+            t += self.last_id
+            self.last_id = t[0,-1]
 
         elif self.timing_mode == 'end_read_relative':
             t = I/float(self.sample_rate)
             t += (self.end_read_time - t[0,-1]) - self.T0
+            if t[0,0] <= self.last_id:
+                t += 1/float(self.sample_rate)
+            self.last_id = t[0,-1]
 
         elif self.timing_mode == 'smoothed_sample_rate':
             t = I/smoothed_sample_rate
-            t += self.last_smoothed_id
-            self.last_smoothed_id = t[0,-1]
+            t += self.last_id
+            self.last_id = t[0,-1]
 
         elif self.timing_mode == 'begin_read_relative':
             t = I/float(self.sample_rate)
-            t += self.begin_read_time - self.T0
+            if relative_begin_read_time < self.last_id:
+                relative_begin_read_time = self.last_id
+            t += relative_begin_read_time
+            self.last_id = t[0,-1]
 
         elif self.timing_mode == 'estimated_sample_rate':
             t = I/estimated_sample_rate
-            t += self.begin_read_time - self.T0
+            if relative_begin_read_time < self.last_id:
+                relative_begin_read_time = self.last_id
+            t += relative_begin_read_time
+            self.last_id = t[0,-1]
 
         else:
             self.logger.warning('Invalid timing mode, defaulting to begin_read_relative')
             t = I/float(self.sample_rate)
-            t += self.begin_read_time - self.T0
+            t += relative_begin_read_time
+            self.last_id = t[0,-1]
 
         return t
 
