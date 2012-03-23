@@ -19,5 +19,7 @@ setup(
         'argparse',
         'pywin32',
         'pyserial',
+        'ctypes',
+        'wmi',
     ]
 )

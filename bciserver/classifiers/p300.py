@@ -75,6 +75,7 @@ class Classifier(threading.Thread):
     def _reset(self):
         """ Resets the classifier. Flushes all collected data."""
         self.application_data = None
+        self.application_data_valid = True
         self.processed_data = None
         self.num_coherent_classifications = 0
         self.last_winner = -1
@@ -97,7 +98,7 @@ class Classifier(threading.Thread):
         self.prev_state = self.state
         self.state = new_state
         self.state_event.set()
-        self.logger.info('Changed state to %s' % new_state)
+        self.logger.info('Changed state to %s, prev_state is %s' % (self.state, self.prev_state))
 
     def _train(self):
         """ Trains on the data collected thus far. """
@@ -184,14 +185,15 @@ class Classifier(threading.Thread):
     def _apply(self, d):
         """ Applies classifier to a dataset. """
 
-        # Perorm preprocessing
+        # Perform preprocessing
         d = self.preprocessing.apply(d)
         slices = self.slice_node.apply(d)
         if slices == None:
             return
 
-        if self.application_data == None:
+        if self.application_data == None or not self.application_data_valid:
             self.application_data = slices
+            self.application_data_valid = True
         else:
             self.application_data += slices
 
@@ -229,7 +231,7 @@ class Classifier(threading.Thread):
 
             self.logger.info('classification result: %d' % winner)
             self.engine.provide_result([list(result[0,:]), winner+1])
-            self.application_data = None
+            self.application_data_valid = False
             self.num_coherent_classifications = 0
             self.last_winner = -1
             self.last_repetitions_recorded = 0
@@ -288,8 +290,8 @@ class Classifier(threading.Thread):
 
                 # Flush previously stored application data
                 if self.prev_state != 'application':
-                    self.application_data = None
-                    self.slic_node.reset()
+                    self.application_data_valid = False
+                    self.slice_node.reset()
                     self.engine.provide_mode('application')
 
                 while not self.state_event.is_set():
@@ -310,7 +312,8 @@ class Classifier(threading.Thread):
                 self.logger.warning('Classifier in invalid state: %s' % self.state)
                 self.state_event.wait()
 
-            self.prev_state = self.state
+            # Necessary??
+            # self.prev_state = self.state
 
     def stop(self):
         """ Make the classifier stop collecting data. Works in training as well as application mode.
@@ -370,6 +373,7 @@ class Classifier(threading.Thread):
             for i in range(1,self.num_options+1):
                 self.mdict[i] = 'target %02d' % i
             self.slice_node.reset()
+            self.application_data_valid = False
             return True
 
         if self.state != 'idle' or self.training_complete:

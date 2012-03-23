@@ -201,6 +201,7 @@ def main():
     print '''
 K.U.Leuven BCI server -- Marijn van Vliet <marijn.vanvliet@med.kuleuven.be>
 Copyright computational neuroscience group, K.U.Leuven (2011)
+
 '''
 
     

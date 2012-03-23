@@ -36,6 +36,8 @@ class EPOC(Recorder):
         self.physical_max = 16000
         self.digital_min = 0
         self.digital_max = 16000
+        self.gain = 1.0
+
 
         self.logger = logging.getLogger('EPOC Recorder')
 
