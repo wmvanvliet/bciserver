@@ -27,8 +27,7 @@ from imecnl import IMECNL
 from biosemi import BIOSEMI
 available_devices = {'emulator':Emulator,
                      'imec-be':IMECBE,
-                     'imec-nl':IMECNL,
-                     'biosemi':BIOSEMI}
+                     'imec-nl':IMECNL}
 
 try:
     import epoc
@@ -36,3 +35,11 @@ try:
     available_devices['epoc'] = EPOC
 except ImportError:
     pass # silently fail when EPOC is not available
+
+try:
+    import biosemi as bs
+    from biosemi import BIOSEMI
+    available_devices['biosemi'] = BIOSEMI
+
+except ImportError:
+    pass # silently fail when BIOSEMI is not available
