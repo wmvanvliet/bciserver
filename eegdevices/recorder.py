@@ -1,5 +1,4 @@
 ﻿import threading
-import time
 import golem
 import psychic
 import numpy
@@ -408,10 +407,10 @@ class Recorder(threading.Thread):
                         raise DeviceError('Channel %s is not a valid channel for this device.' % channel_name)
 
                     target_channels.append( self.feat_lab.index(channel_name) )
-                elif type(channel_name) == float:
-                    raise DeviceError('Invalid channel index or name: %f, please use integers or strings.' % channel_name)
-                else:
+                elif type(channel_name) == int:
                     target_channels.append(channel_name)
+                else: 
+                    raise DeviceError('Invalid channel index or name: %f, please use integers or strings.' % channel_name)
 
             self.target_channels = target_channels
             self.nchannels = len(self.target_channels)
