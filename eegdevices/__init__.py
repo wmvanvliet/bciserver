@@ -24,9 +24,11 @@ from recorder import DeviceError
 from emulator import Emulator
 from imecbe import IMECBE
 from imecnl import IMECNL
+from biosemi import BIOSEMI
 available_devices = {'emulator':Emulator,
                      'imec-be':IMECBE,
-                     'imec-nl':IMECNL}
+                     'imec-nl':IMECNL,
+                     'biosemi':BIOSEMI}
 
 try:
     import epoc
