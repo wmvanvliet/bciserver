@@ -1,10 +1,10 @@
-import biosemi
+import biosemi_reader
 import logging
 import numpy
 import golem
 import time
 
-from eegdevices import Recorder, precision_timer, DeviceError
+from . import Recorder, precision_timer, DeviceError
 
 class BIOSEMI(Recorder):
     """ 
@@ -32,13 +32,14 @@ class BIOSEMI(Recorder):
         self.physical_min = -262144 
         self.physical_max = 262144
         self.digital_min = 0
-        self.digital_max = 16777215
+        self.digital_max = 2**24
         self.gain = (self.physical_max-self.physical_min) / float(self.digital_max-self.digital_min)
-        self.buffer_size_bytes = 280 * 4 * (buffer_size_seconds+1) * self.sampe_rate
+        self.buffer_size_bytes = int(280 * 4 * (buffer_size_seconds+1) * self.sample_rate)
+        self.status_as_markers = status_as_markers
 
         self.logger = logging.getLogger('BIOSEMI Recorder')
 
-        self.feat_lab [
+        self.feat_lab = [
             'Fp1', 'AF3', 'F7', 'F3', 'FC1', 'FC5', 'T7', 'C3',
             'CP1', 'CP5', 'P7', 'P3', 'Pz', 'PO3', 'O1', 'Oz',
             'O2', 'PO4', 'P4', 'P8', 'CP6', 'CP2', 'C4', 'T8',
@@ -46,13 +47,13 @@ class BIOSEMI(Recorder):
             'EXG1', 'EXG2', 'EXG3', 'EXG4', 'EXG5', 'EXG6', 'EXG7', 'EXG8'
         ]
         
-        if not status_as_markers:
-            self.reader = biosemi.BioSemiReader(
+        if not self.status_as_markers:
+            self.reader = biosemi_reader.BiosemiReader(
                 buffersize=self.buffer_size_bytes,
                 sync=True,
                 pollInterval=1)
         else:
-            self.reader = biosemi.BioSemiReader(
+            self.reader = biosemi_reader.BiosemiReader(
                 buffersize=self.buffer_size_bytes)
 
         # Configuration of the generic recorder object
@@ -116,13 +117,16 @@ class BIOSEMI(Recorder):
             self.logger.warning('Data corrupt: no valid frames found in data packet')
             return None
 
+        # Undo byte adding that the biosemi has done
+        data = (data >> 8)
+
         # First channel is status channel
         if self.status_as_markers:
-            Y = data[:1,:]
+            Y = (data[:1,:] & 0x00ffff)
         else:
             Y = numpy.zeros((1, data.shape[1]))
 
-        X = data[1:,:]
+        X = data[1:,:] + (2**23) # go from signed to unsigned
         X = X[self.target_channels,:]
         I = self._estimate_timing(X.shape[1])
 
