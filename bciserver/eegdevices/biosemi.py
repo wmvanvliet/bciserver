@@ -12,7 +12,7 @@ class BIOSEMI(Recorder):
     Recorder class.
     """
 
-    def __init__(self, buffer_size_seconds=0.5, status_as_markers=True, bdf_file=None, timing_mode='fixed'):
+    def __init__(self, buffer_size_seconds=0.5, status_as_markers=False, bdf_file=None, timing_mode='begin_read_relative'):
         """ Open the BIOSEMI device
 
         Keyword arguments:
@@ -55,6 +55,7 @@ class BIOSEMI(Recorder):
         else:
             self.reader = biosemi_reader.BiosemiReader(
                 buffersize=self.buffer_size_bytes)
+            self.timing_mode = 'fixed'
 
         # Configuration of the generic recorder object
         Recorder.__init__(self, buffer_size_seconds, bdf_file, timing_mode)
@@ -158,3 +159,18 @@ class BIOSEMI(Recorder):
             return d
         else:
             return super(BIOSEMI, self)._add_markers(d)
+
+    def set_parameter(self, name, values):
+        if name == 'timing_mode':
+            if len(values) < 1:
+                raise DeviceError('missing value for timing_mode.')
+            elif values[0] == 'trigger_cable':
+                self.status_as_markers = True
+                self.timing_mode = 'fixed'
+                return True
+            else:
+                return super(BIOSEMI,self).set_parameter(name, values)
+
+        else:
+            return super(BIOSEMI,self).set_parameter(name, values)
+

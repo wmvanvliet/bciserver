@@ -384,7 +384,7 @@ class Recorder(threading.Thread):
                 self.timing_mode = values[0]
                 return True
             else:
-                raise DeviceError('invalid value for timing_mode.')
+                raise DeviceError('invalid timing_mode for device.')
 
 
         elif name == 'buffer_size_seconds':
