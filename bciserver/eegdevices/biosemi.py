@@ -185,7 +185,6 @@ class BIOSEMI(Recorder):
 
             self.marker_lock.acquire()
 
-            print 'Trying to write code...'
             print lpt.Out32(0x4ff8, code)
             delay = precision_timer() - timestamp
 
