@@ -1,7 +1,0 @@
-cvxopt
-numpy
-scipy
-argparse
-pywin32
-pyserial
-ctypes

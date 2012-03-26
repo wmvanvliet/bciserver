@@ -4,7 +4,7 @@ import numpy
 import golem
 import time
 
-from eegdevices import Recorder, precision_timer, DeviceError
+from . import Recorder, precision_timer, DeviceError
 
 class EPOC(Recorder):
     """ 
@@ -36,7 +36,8 @@ class EPOC(Recorder):
         self.physical_max = 16000
         self.digital_min = 0
         self.digital_max = 16000
-        self.gain = (self.physical_max-self.physical_min) / float(self.digital_max-self.digital_min)
+        self.gain = 1.0
+
 
         self.logger = logging.getLogger('EPOC Recorder')
 
