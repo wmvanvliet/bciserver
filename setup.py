@@ -11,6 +11,7 @@ setup(
     license='closed',
     packages=['bciserver', 'bciserver.classifiers', 'bciserver.eegdevices'],
     entry_points=dict(console_scripts=['bciserver=bciserver:main']),
+    data_files = [('', ['inpout32.dll'])],
     install_requires=[
         'cvxopt',
         'numpy',

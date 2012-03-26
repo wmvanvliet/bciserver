@@ -4,7 +4,15 @@ import numpy
 import golem
 import time
 
-from . import Recorder, precision_timer, DeviceError
+from . import Recorder, precision_timer, DeviceError, Marker
+
+try:
+    import ctypes
+    lpt = ctypes.windll.inpout32
+    lpt_error = None
+except Exception as e:
+    lpt = None
+    lpt_error = e
 
 class BIOSEMI(Recorder):
     """ 
@@ -56,6 +64,9 @@ class BIOSEMI(Recorder):
             self.reader = biosemi_reader.BiosemiReader(
                 buffersize=self.buffer_size_bytes)
             self.timing_mode = 'fixed'
+
+            if lpt == None:
+                raise DeviceError('Could not open inpout32.dll: %s' % lpt_error)
 
         # Configuration of the generic recorder object
         Recorder.__init__(self, buffer_size_seconds, bdf_file, timing_mode)
@@ -160,11 +171,41 @@ class BIOSEMI(Recorder):
         else:
             return super(BIOSEMI, self)._add_markers(d)
 
+    def set_marker(self, code, type='trigger', timestamp=precision_timer()):
+        """ Label the data with a marker.
+
+        code      - any integer value you wish to label the data with
+        type      - 'trigger' meaning only one instance will be marked or
+                    'switch' meaning all instances from now on will be marked
+        timestamp - the exact timing at which the marker should be placed
+                    (in seconds after epoch, floating point)
+        """
+        if self.status_as_markers:
+            assert(type == 'switch' or type == 'trigger')
+
+            self.marker_lock.acquire()
+
+            print 'Trying to write code...'
+            print lpt.Out32(0x4ff8, code)
+            delay = precision_timer() - timestamp
+
+            if(type == 'trigger'):
+                time.sleep(0.005)
+                lpt.Out32(0x4ff8, 0)
+                
+            m = Marker(code, type, timestamp)
+            self.logger.info('Received marker %s, delay %.3f s' % (m, delay))
+            self.marker_lock.release()
+        else:
+            super(BIOSEMI, self).set_marker(code, type, timestamp)
+
     def set_parameter(self, name, values):
         if name == 'timing_mode':
             if len(values) < 1:
                 raise DeviceError('missing value for timing_mode.')
             elif values[0] == 'trigger_cable':
+                if lpt == None:
+                    raise DeviceError('Could not open inpout32.dll: %s' % lpt_error)
                 self.status_as_markers = True
                 self.timing_mode = 'fixed'
                 return True
