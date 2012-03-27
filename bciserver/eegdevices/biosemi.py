@@ -4,6 +4,10 @@ import numpy
 import golem
 import time
 
+import wmi
+import _winreg as reg
+import struct
+
 from . import Recorder, precision_timer, DeviceError, Marker
 
 try:
@@ -20,7 +24,7 @@ class BIOSEMI(Recorder):
     Recorder class.
     """
 
-    def __init__(self, buffer_size_seconds=0.5, status_as_markers=False, bdf_file=None, timing_mode='begin_read_relative'):
+    def __init__(self, buffer_size_seconds=0.5, status_as_markers=False, bdf_file=None, timing_mode='begin_read_relative', port='LPT1'):
         """ Open the BIOSEMI device
 
         Keyword arguments:
@@ -61,12 +65,15 @@ class BIOSEMI(Recorder):
                 sync=True,
                 pollInterval=1)
         else:
+            if lpt == None:
+                raise DeviceError('Could not open inpout32.dll: %s' % lpt_error)
+
+            self.lpt_address = self._get_lpt_address(port)
+
             self.reader = biosemi_reader.BiosemiReader(
                 buffersize=self.buffer_size_bytes)
             self.timing_mode = 'fixed'
 
-            if lpt == None:
-                raise DeviceError('Could not open inpout32.dll: %s' % lpt_error)
 
         # Configuration of the generic recorder object
         Recorder.__init__(self, buffer_size_seconds, bdf_file, timing_mode)
@@ -96,6 +103,8 @@ class BIOSEMI(Recorder):
         self.reader.close()
 
     def _record_data(self):
+        ''' Reads data from the BIOSEMI device and returns it as a Golem
+        dataset. '''
         self.begin_read_time = self.end_read_time
         self.end_read_time = self.begin_read_time + self.buffer_size_seconds
         time_to_wait = max(0, self.end_read_time - precision_timer())
@@ -185,12 +194,12 @@ class BIOSEMI(Recorder):
 
             self.marker_lock.acquire()
 
-            print lpt.Out32(0x4ff8, code)
+            print lpt.Out32(self.lpt_address, code)
             delay = precision_timer() - timestamp
 
             if(type == 'trigger'):
                 time.sleep(0.005)
-                lpt.Out32(0x4ff8, 0)
+                lpt.Out32(self.lpt_address, 0)
                 
             m = Marker(code, type, timestamp)
             self.logger.info('Received marker %s, delay %.3f s' % (m, delay))
@@ -209,8 +218,82 @@ class BIOSEMI(Recorder):
                 self.timing_mode = 'fixed'
                 return True
             else:
+                self.status_as_markers = False
                 return super(BIOSEMI,self).set_parameter(name, values)
+
+        elif name == 'port':
+            if len(values) < 1:
+                raise DeviceError('missing value for port.')
+            self.lpt_address = self._get_lpt_address(values[0])
+            return True
 
         else:
             return super(BIOSEMI,self).set_parameter(name, values)
+
+    def get_parameter(self, name):
+        value = super(BIOSEMI, self).get_parameter(name)
+        if value:
+            return value
+
+        if name == 'port':
+            return self.port
+        else:
+            return False
+
+    def _get_lpt_ports(self):
+        ''' Return a dictionary (name -> address) of available LPT ports
+        on the system (Windows only). '''
+
+        lpt_ports = {}
+
+        lpt_devices = wmi.GetObject('WinMgmts://').InstancesOf('Win32_ParallelPort')
+        for device in lpt_devices:
+            id = device.PnpDeviceID
+            key = reg.OpenKey(
+                reg.HKEY_LOCAL_MACHINE, 
+                'SYSTEM\\CurrentControlSet\\Enum\\' + id + '\\Device Parameters')
+            portname = reg.QueryValueEx(key, 'PortName')[0]
+
+            # Address can be stored in two places...
+            try: 
+                # For expansion cards
+                key = reg.OpenKey(
+                    reg.HKEY_LOCAL_MACHINE, 
+                    'SYSTEM\\CurrentControlSet\\Enum\\' + id + '\\Control')
+                conf = reg.QueryValueEx(key, 'AllocConfig')[0]
+
+                # Decode data as signed integers (4 bytes each)
+                conf_dec = struct.unpack('%di' % (len(conf)/4), conf)
+
+                # Find the portaddress at the correct offset
+                portaddress = conf_dec[6]
+
+            except WindowsError as e:
+                # For regular ports
+                key = reg.OpenKey(
+                    reg.HKEY_LOCAL_MACHINE, 
+                    'SYSTEM\\CurrentControlSet\\Enum\\' + id + '\\LogConf')
+                conf = reg.QueryValueEx(key, 'BasicConfigVector')[0]
+
+                # Decode data as signed integers (4 bytes each)
+                conf_dec = struct.unpack('%di' % (len(conf)/4), conf)
+
+                # Find the portaddress at the correct offset
+                portaddress = conf_dec[14]
+
+            lpt_ports[portname] = portaddress
+
+        return lpt_ports
+
+    def _get_lpt_address(self, lpt_port='LPT1'):
+        ''' Returns the address of the LPT port with the given name. Raises
+        a DeviceError if the port is not available on the system.
+        Use _get_lpt_ports() to determine which ports are available.
+        Windows only. '''
+
+        lpt_ports = self._get_lpt_ports()
+        if not lpt_port in lpt_ports:
+            raise DeviceError('%s port not found (available ports: %s)' %
+                (lpt_port, lpt_ports.keys()))
+        return lpt_ports[lpt_port]
 

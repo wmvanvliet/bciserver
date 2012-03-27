@@ -37,12 +37,12 @@ class Engine:
             self.server_socket.settimeout(1)
             self.server_socket.listen(1)
 
-            connected = False
+            self.connected = False
             while self.running:
                 try:
                     (client_socket, address) = self.server_socket.accept()
                     self.ch = ClientHandler(client_socket, self)
-                    connected = True
+                    self.connected = True
 
                     self.ch.run()
                     self.connected = False
