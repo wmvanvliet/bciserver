@@ -208,25 +208,24 @@ class BIOSEMI(Recorder):
             super(BIOSEMI, self).set_marker(code, type, timestamp)
 
     def set_parameter(self, name, values):
-        if name == 'timing_mode':
-            if len(values) < 1:
-                raise DeviceError('missing value for timing_mode.')
-            elif values[0] == 'trigger_cable':
-                if lpt == None:
-                    raise DeviceError('Could not open inpout32.dll: %s' % lpt_error)
-                self.status_as_markers = True
-                self.timing_mode = 'fixed'
-                return True
-            else:
-                self.status_as_markers = False
-                return super(BIOSEMI,self).set_parameter(name, values)
-
-        elif name == 'port':
+        if name == 'port':
             if len(values) < 1:
                 raise DeviceError('missing value for port.')
             self.lpt_address = self._get_lpt_address(values[0])
             return True
 
+        elif name == 'status_as_markers':
+            if len(values) < 1:
+                raise DeviceError('missing value for status_as_markers.')
+            if values[0]:
+                if lpt == None:
+                    raise DeviceError('Could not open inpout32.dll: %s' % lpt_error)
+                self.status_as_markers = True
+                self.timing_mode = 'fixed'
+            else:
+                self.status_as_markers = False
+                self.timing_mode = 'begin_read_relative'
+            return True
         else:
             return super(BIOSEMI,self).set_parameter(name, values)
 
@@ -268,7 +267,7 @@ class BIOSEMI(Recorder):
                 # Find the portaddress at the correct offset
                 portaddress = conf_dec[6]
 
-            except WindowsError as e:
+            except WindowsError:
                 # For regular ports
                 key = reg.OpenKey(
                     reg.HKEY_LOCAL_MACHINE, 
