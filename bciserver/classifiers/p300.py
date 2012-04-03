@@ -276,8 +276,8 @@ class Classifier(threading.Thread):
                 try:
                     self._train()
                 except Exception as e:
+                    self.logger.error(e)
                     self.engine.error(e)
-                    raise
 
                 # Turn back to idle state
                 self.change_state('idle')
@@ -337,7 +337,7 @@ class Classifier(threading.Thread):
         """ Send a PNG image describing the training data to Unity. """
 
         self.logger.info('Sending debug plot to Unity')
-        fig = psychic.plot_erp(d, self.target_sample_rate, feat_lab=self.feat_lab, enforce_equal_n=False)
+        fig = psychic.plot_erp(d)
         fig.set_size_inches(7,11)
 
         # Save a snapshot to disk
@@ -397,7 +397,7 @@ class Classifier(threading.Thread):
 
         elif name == 'target_sample_rate':
             if type(value[0]) != int and type(value[0]) != float:
-                raise ClassifierException('Value for num_options must be numeric.')
+                raise ClassifierException('Value for target_sample_rate must be numeric.')
 
             self.target_sample_rate = value[0]
             self.target_window = (int(self.target_sample_rate*self.window[0]), int(self.target_sample_rate*self.window[1]))

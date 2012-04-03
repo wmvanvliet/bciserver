@@ -44,6 +44,7 @@ class Classifier(threading.Thread):
         self.bandpass = bandpass
         self.running = False
         self.pipeline = None
+        self.target_sample_rate = 128
     
         self._reset() 
 
@@ -56,11 +57,14 @@ class Classifier(threading.Thread):
     def _construct_pipeline(self):
         self.logger.info('Creating pipeline')
         self.bp_node = psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(4, [self.bandpass[0]/(s/2.0), self.bandpass[1]/(s/2.0)]) )
+        self.resample_node = psychic.nodes.Resample(self.target_sample_rate, max_marker_delay=1)
         self.ica_node = golem.nodes.ICA()
         self.window_node = psychic.nodes.OnlineSlidingWindow(int(self.window_size*self.recorder.sample_rate), int(self.window_step*self.recorder.sample_rate))
         self.slic_node = psychic.nodes.Slic([self.freq], self.recorder.sample_rate)
         self.thres_node = golem.nodes.Threshold([0,1],feature=0)
-        self.pipeline = golem.nodes.Chain([self.bp_node, self.ica_node, self.window_node, self.slic_node, self.thres_node])
+        self.preprocessing = golem.nodes.Chain([self.bp_node, self.resample_node])
+        self.classification = golem.nodes.Chain([self.window_node, self.slic_node, self.thres_node])
+        self.pipeline = golem.nodes.Chain([self.preprocessing, self.ica_node, self.classification])
 
     def _reset(self):
         """ Reset the classifier. Flushes all collected data."""
@@ -111,7 +115,9 @@ class Classifier(threading.Thread):
         self._construct_pipeline()
 
         # Train the pipeline
-        self.pipeline.train(d)
+        d2 = self.preprocessing.train_apply(d,d)
+        d2 = self.ica_node.train_apply(d.get_class(0), d2)
+        self.classification.train(d2)
         self.logger.info('Training complete')
 
         # Send a debug plot to Unity
@@ -184,6 +190,7 @@ class Classifier(threading.Thread):
                 try:
                     self._train()
                 except Exception as e:
+                    self.logger.error(e)
                     self.engine.error(e)
 
                 # Turn back to idle state
@@ -324,6 +331,14 @@ class Classifier(threading.Thread):
             self.freq = float(value[0])
             parameter_set = True
 
+        elif name == 'target_sample_rate':
+            if type(value[0]) != int and type(value[0]) != float:
+                raise ClassifierException('Value for target_sample_rate must be numeric.')
+
+            self.target_sample_rate = value[0]
+            self.target_window = (int(self.target_sample_rate*self.window[0]), int(self.target_sample_rate*self.window[1]))
+            parameter_set = True
+
         return parameter_set
 
     def get_parameter(self, name):
@@ -336,6 +351,8 @@ class Classifier(threading.Thread):
             return self.window_step
         elif name == 'window_size':
             return self.window_size
+        elif name == 'target_sample_rate':
+            return self.target_sample_rate
         elif name == 'bandpass':
             return self.bandpass
         elif name == 'freq':

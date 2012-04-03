@@ -48,7 +48,7 @@ class IMECBE(Recorder):
         self.handshake_response = bytes("\xEE\xEE")
         self.test_mode_command = bytes("\x41")
         self.start_measurement_command = bytes("\x20")
-        self.calibration_time = 10 # Signal takes 60 seconds to stabilize
+        self.calibration_time = 0 # Signal takes 0 seconds to stabilize
         self.physical_min = -625
         self.physical_max = 624
         self.digital_min = 0
@@ -338,7 +338,7 @@ class IMECBE(Recorder):
                 self.logger.warning('Dropped %d frames' % dropped_frames)
 
                 self.droppedframeslog.write('%f, %f, %d\n' %
-                                   (precision_timer(), self.last_fixed_id, dropped_frames))
+                                   (precision_timer(), self.last_id, dropped_frames))
                 self.droppedframeslog.flush()
 
             # Interpolate the dropped frames if possible

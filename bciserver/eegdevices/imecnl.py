@@ -40,7 +40,7 @@ class IMECNL(Recorder):
         self.nchannels = 8
         self.samples_per_frame = 1
         self.bytes_per_frame = 25
-        self.calibration_time = 10 # Signal takes 90 seconds to stabilize
+        self.calibration_time = 0 # Signal takes 0 seconds to stabilize
         self.physical_min = 0
         self.physical_max = 65535
         self.digital_min = 0
@@ -368,7 +368,7 @@ class IMECNL(Recorder):
     def _decode_frame(self, data):
         """ Decodes a single frame of data read from the IMEC device.
         """
-        preamble, seq1, seq2, seq3, seq4, chan1, chan2, chan3, chan4, chan5, chan6, chan7, chan8, mode, event = self.frame_struct.unpack(data)
+        preamble, seq1, seq2, seq3, seq4, chan1, chan2, chan3, chan4, chan5, chan6, chan7, chan8, mode, event = self.frame_struct.unpack(bytes(data))
         seq = seq1 + 256*seq2 + 65536*seq3 + 16777216*seq4
         X = numpy.atleast_2d(numpy.array([chan1, chan2, chan3, chan4, chan5, chan6, chan7, chan8])).T
 
