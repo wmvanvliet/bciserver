@@ -124,6 +124,8 @@ class ClientHandler:
             return ' '.join([self.encode(x) for x in value])
         elif type(value) == int or type(value) == float:
             return str(value)
+        elif type(value) == bool:
+            return '1' if value else '0'
         else: 
             return '"' + str(value).replace('"', '\\"') + '"'
 

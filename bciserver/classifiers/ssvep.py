@@ -59,8 +59,8 @@ class Classifier(threading.Thread):
         self.bp_node = psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(4, [self.bandpass[0]/(s/2.0), self.bandpass[1]/(s/2.0)]) )
         self.resample_node = psychic.nodes.Resample(self.target_sample_rate, max_marker_delay=1)
         self.ica_node = golem.nodes.ICA()
-        self.window_node = psychic.nodes.OnlineSlidingWindow(int(self.window_size*self.recorder.sample_rate), int(self.window_step*self.recorder.sample_rate))
-        self.slic_node = psychic.nodes.Slic([self.freq], self.recorder.sample_rate)
+        self.window_node = psychic.nodes.OnlineSlidingWindow(int(self.window_size*self.target_sample_rate), int(self.window_step*self.target_sample_rate))
+        self.slic_node = psychic.nodes.Slic([self.freq], self.target_sample_rate)
         self.thres_node = golem.nodes.Threshold([0,1],feature=0)
         self.preprocessing = golem.nodes.Chain([self.bp_node, self.resample_node])
         self.classification = golem.nodes.Chain([self.window_node, self.slic_node, self.thres_node])
@@ -139,7 +139,7 @@ class Classifier(threading.Thread):
         # send result to Unity
         if self.engine != None:
             for i in range(0, result.ys.shape[0]):
-                self.engine.provide_result([result.xs[i,0], result.ys[i,0]])
+                self.engine.provide_result([result.xs[i,0], int(result.ys[i,0])])
     
     def pause_classifier(self):
         """ Pause the classifier while in application mode. To unpause, call
