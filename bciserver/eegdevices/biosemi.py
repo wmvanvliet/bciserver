@@ -24,7 +24,7 @@ class BIOSEMI(Recorder):
     Recorder class.
     """
 
-    def __init__(self, buffer_size_seconds=0.5, status_as_markers=False, bdf_file=None, timing_mode='begin_read_relative', port='LPT1'):
+    def __init__(self, buffer_size_seconds=0.5, status_as_markers=False, bdf_file=None, timing_mode='begin_read_relative', port='LPT1', reference_channels=[]):
         """ Open the BIOSEMI device
 
         Keyword arguments:
@@ -48,6 +48,8 @@ class BIOSEMI(Recorder):
         self.gain = (self.physical_max-self.physical_min) / float(self.digital_max-self.digital_min)
         self.buffer_size_bytes = int(280 * 4 * (buffer_size_seconds+1) * self.sample_rate)
         self.status_as_markers = status_as_markers
+        self.reference_channels = reference_channels
+        self.nreference_channels = len(self.reference_channels)
 
         self.logger = logging.getLogger('BIOSEMI Recorder')
 
@@ -148,7 +150,15 @@ class BIOSEMI(Recorder):
             Y = numpy.zeros((1, data.shape[1]))
 
         X = data[1:,:] + (2**23) # go from signed to unsigned
+
+        if len(self.reference_channels) > 0:
+            REF = X[self.reference_channels,:]
+
         X = X[self.target_channels,:]
+
+        if len(self.reference_channels) > 0:
+            X = X - numpy.tile(numpy.mean(REF, axis=0), (X.shape[0], 1))
+
         I = self._estimate_timing(X.shape[1])
 
         self.logger.debug('Number of samples parsed: %d' % X.shape[1])
@@ -226,6 +236,28 @@ class BIOSEMI(Recorder):
                 self.status_as_markers = False
                 self.timing_mode = 'begin_read_relative'
             return True
+
+        elif name == 'reference_channels':
+            if self.running:
+                raise DeviceError('Cannot set parameter because the device is already opened.')
+
+            reference_channels = []
+
+            for channel_name in values:
+                if type(channel_name) == str:
+                    if not channel_name in self.feat_lab:
+                        raise DeviceError('Channel %s is not a valid channel for this device.' % channel_name)
+
+                    reference_channels.append( self.feat_lab.index(channel_name) )
+                elif type(channel_name) == float:
+                    raise DeviceError('Invalid channel index or name: %f, please use integers or strings.' % channel_name)
+                else:
+                    reference_channels.append(channel_name)
+
+            self.reference_channels = reference_channels
+            self.nreference_channels = len(reference_channels)
+            return True
+
         else:
             return super(BIOSEMI,self).set_parameter(name, values)
 
@@ -236,6 +268,10 @@ class BIOSEMI(Recorder):
 
         if name == 'port':
             return self.port
+
+        elif name == 'reference_channels':
+            return self.reference_channels
+
         else:
             return False
 
