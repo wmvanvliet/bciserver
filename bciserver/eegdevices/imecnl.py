@@ -39,7 +39,7 @@ class IMECNL(Recorder):
         self.sample_rate = 1024
         self.nchannels = 8
         self.samples_per_frame = 1
-        self.bytes_per_frame = 25
+        self.bytes_per_frame = 27
         self.calibration_time = 0 # Signal takes 0 seconds to stabilize
         self.physical_min = 0
         self.physical_max = 65535
@@ -48,8 +48,8 @@ class IMECNL(Recorder):
         self.gain = ((self.physical_max-self.physical_min) /
                      float(self.digital_max-self.digital_min))
         self.feat_lab = ['Fz', 'Cz', 'CP1', 'CP2', 'P3', 'Pz', 'P4', 'Oz']
-        self.preamble = bytes('JEF')
-        self.frame_struct = struct.Struct('<3s4B8HBc')
+        self.preamble = bytes('BAN')
+        self.frame_struct = struct.Struct('<3s4B8HBcH')
 
         self.port = port
 
@@ -368,11 +368,11 @@ class IMECNL(Recorder):
     def _decode_frame(self, data):
         """ Decodes a single frame of data read from the IMEC device.
         """
-        preamble, seq1, seq2, seq3, seq4, chan1, chan2, chan3, chan4, chan5, chan6, chan7, chan8, mode, event = self.frame_struct.unpack(bytes(data))
+        preamble, seq1, seq2, seq3, seq4, chan1, chan2, chan3, chan4, chan5, chan6, chan7, chan8, mode, event, adc = self.frame_struct.unpack(bytes(data))
         seq = seq1 + 256*seq2 + 65536*seq3 + 16777216*seq4
         X = numpy.atleast_2d(numpy.array([chan1, chan2, chan3, chan4, chan5, chan6, chan7, chan8])).T
 
-        return Frame(seq=seq, mode=mode, event=event, X=X)
+        return Frame(seq=seq, mode=mode, event=event, volt=8*adc/4095.0, X=X)
 
     def _flush_buffer(self):
         """ Flush data in EPOC buffer """
@@ -444,11 +444,12 @@ class Frame:
     Frame.event: event related byte ('0' or '1')
     Frame.X:   a (channels x sample) numpy array containing the data
     """
-    def __init__(self, seq=-1, mode=-1, event=-1, X=[]):
+    def __init__(self, seq=-1, mode=-1, event=-1, volt=0, X=[]):
         self.seq = seq
         self.mode = mode
         self.event = event
+        self.volt = volt
         self.X = X
 
     def __repr__(self):
-        return 'Frame (%d)<mode: %d, event: %s, X:%s>' % (self.seq, self.mode, self.event, self.X)
+        return 'Frame (%d)<mode: %d, event: %s, volt: %.2f, X:%s>' % (self.seq, self.mode, self.event, self.volt, self.X)
