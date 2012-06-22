@@ -401,7 +401,8 @@ class Recorder(threading.Thread):
             if len(values) != self.nchannels:
                 raise DeviceError('Number of channel names should be equal to number of (target) channels of the device (%d).' % self.nchannels)
 
-            self.feat_lab = values
+            self.channel_names = values
+            self.feat_lab = [self.channel_names[x] for x in self.target_channels]
             return True
 
         elif name == 'target_channels':
@@ -415,10 +416,10 @@ class Recorder(threading.Thread):
 
             for channel_name in values:
                 if type(channel_name) == str:
-                    if not channel_name in self.feat_lab:
+                    if not channel_name in self.channel_names:
                         raise DeviceError('Channel %s is not a valid channel for this device.' % channel_name)
 
-                    target_channels.append( self.feat_lab.index(channel_name) )
+                    target_channels.append( self.channel_names.index(channel_name) )
                 elif type(channel_name) == float:
                     raise DeviceError('Invalid channel index or name: %f, please use integers or strings.' % channel_name)
                 else:
@@ -426,7 +427,7 @@ class Recorder(threading.Thread):
 
             self.target_channels = target_channels
             self.nchannels = len(self.target_channels)
-            self.feat_lab = [self.feat_lab[x] for x in self.target_channels]
+            self.feat_lab = [self.channel_names[x] for x in self.target_channels]
             return True
         else:
             return False

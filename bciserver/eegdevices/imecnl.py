@@ -47,7 +47,8 @@ class IMECNL(Recorder):
         self.digital_max = 65535
         self.gain = ((self.physical_max-self.physical_min) /
                      float(self.digital_max-self.digital_min))
-        self.feat_lab = ['Fz', 'Cz', 'CP1', 'CP2', 'P3', 'Pz', 'P4', 'Oz']
+        self.channel_names = ['Fz', 'Cz', 'CP1', 'CP2', 'P3', 'Pz', 'P4', 'Oz']
+        self.feat_lab = list(self.channel_names)
         self.preamble = bytes('BAN')
         self.frame_struct = struct.Struct('<3s4B8HBcH')
 
