@@ -64,7 +64,8 @@ class Classifier(threading.Thread):
         self.thres_node = golem.nodes.Threshold([0,1],feature=0)
         self.preprocessing = golem.nodes.Chain([self.bp_node, self.resample_node])
         self.classification = golem.nodes.Chain([self.window_node, self.slic_node, self.thres_node])
-        self.pipeline = golem.nodes.Chain([self.preprocessing, self.ica_node, self.classification])
+        self.pipeline_ica = golem.nodes.Chain([self.preprocessing, self.ica_node, self.classification])
+        self.pipeline_no_ica = golem.nodes.Chain([self.preprocessing, self.classification])
 
     def _reset(self):
         """ Reset the classifier. Flushes all collected data."""
@@ -116,7 +117,14 @@ class Classifier(threading.Thread):
 
         # Train the pipeline
         d2 = self.preprocessing.train_apply(d,d)
-        d2 = self.ica_node.train_apply(d.get_class(0), d2)
+
+        try:
+            d2 = self.ica_node.train_apply(d.get_class(0), d2)
+            self.pipeline = self.pipeline_ica
+        except Exception as e:
+            self.logger.warning('Could not train ICA: %s' % e.message)
+            self.pipeline = self.pipeline_no_ica
+    
         self.classification.train(d2)
         self.logger.info('Training complete')
 
@@ -133,14 +141,16 @@ class Classifier(threading.Thread):
         if d.ninstances == 0:
             return
 
-        result = self.pipeline.apply(d)
-        self.logger.debug('Result was: %s:%s at %s' % (result.xs[:,0], result.ys[:,0], result.ids))
+        try:
+            result = self.pipeline.apply(d)
+            self.logger.debug('Result was: %s:%s at %s' % (result.xs[:,0], result.ys[:,0], result.ids))
+            # send result to Unity
+            if self.engine != None:
+                for i in range(0, result.ys.shape[0]):
+                    self.engine.provide_result([result.xs[i,0], int(result.ys[i,0])])
+        except Exception as e:
+            self.logger.warning('%s' % e.message)
 
-        # send result to Unity
-        if self.engine != None:
-            for i in range(0, result.ys.shape[0]):
-                self.engine.provide_result([result.xs[i,0], int(result.ys[i,0])])
-    
     def pause_classifier(self):
         """ Pause the classifier while in application mode. To unpause, call
         either data-collect() or apply_classifier()."""
