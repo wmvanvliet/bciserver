@@ -51,6 +51,7 @@ class IMECNL(Recorder):
         self.feat_lab = list(self.channel_names)
         self.preamble = bytes('BAN')
         self.frame_struct = struct.Struct('<3s4B8HBcH')
+        self.config_struct = struct.Struct('BBBxxBB14x')
 
         self.port = port
 
@@ -103,6 +104,9 @@ class IMECNL(Recorder):
                 ser.close()
                 raise DeviceError('This does not look like the IMEC-NL device.')
             self.serial = ser
+
+        # Configure the device
+        self.serial.write( self.config_struct.pack(1,255,2,0xFF,0x80) )
 
         # Set up buffers to hold data
         buffers = [bytearray(b"\x00" * self.buffer_size) for n in xrange(4)]
