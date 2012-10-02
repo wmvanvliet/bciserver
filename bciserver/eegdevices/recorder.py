@@ -44,7 +44,7 @@ class Recorder(threading.Thread):
     Some useful properties the subclasses implement are:
     nchannels  number of channels the device is recording from
     labels     a textual label for each channel (usually the 10-20 names)
-    sample_rate the sample_rate the device is recording at
+    sample_rate the sample rate the device is recording at
     """
 
     def __init__(self, buffer_size_seconds=0.5, bdf_file=None, timing_mode='begin_read_relative'):
