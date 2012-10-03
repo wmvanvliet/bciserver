@@ -1,0 +1,475 @@
+** Introduction **
+
+Proposal for simple communication protocol between two processes: 1) "Server":
+process that reads data from EEG device and performs analysis/classification of
+the data.  2) "Client": a process using the results of the analysis done by the
+server.
+
+Only one client is allowed to be connected to the server at any time.
+
+For convenient debugging, messages in the protocol are UTF-8 encoded strings,
+separated by a newline (\n) character. This allows for impersonation of a
+server or client through the netcat (nc) utility. 
+
+The order in which the messages are send or received is not specified to allow
+the protocol to be stateless. The delay between two messages is not specified.
+
+The messages have the global form of:
+[category] [command] [value] [value] [value] ...
+[category] and [command] are not case sensitive.
+
+** Grammar **
+
+message: category '\n'
+
+category:
+    'DEVICE' 'SET' name
+             'GET'
+             'PROVIDE' name+
+             'PARAM' 'SET' name value+
+             'PARAM' 'GET' name
+             'PARAM' 'PROVIDE' name value+
+             'OPEN'
+
+	'CLASSIFIER' 'SET' name
+				 'GET'
+				 'PROVIDE' name+
+                 'PARAM' 'SET' name value+
+                 'PARAM' 'GET' name
+                 'PARAM' 'PROVIDE' name value+
+
+	'MARKER' type code (timestamp)?
+
+	'MODE' 'SET' name
+		   'GET'
+		   'PROVIDE' name
+
+	'RESULT' 'GET'
+	'RESULT' 'PROVIDE' value+ (timestamp)?
+
+	'PING'
+	'PONG'
+
+    'ERROR' code string
+
+    'PROGRESS' float float float
+
+name: value
+code: integer
+type: string
+value: string | integer | float
+timestamp: float
+
+string: '"' [UTF-8]* '"'
+integer: '-'? [0-9]+
+float: '-'? [0-9]* '.' [0-9]+
+
+
+** Explanation of the messages **
+
+< and > indicate the direction of the messages. < means client to server, >
+means server to client.
+
+< DEVICE GET
+	Get a list of available device drivers from the server.
+
+< DEVICE SET <name>
+	Use this to instuct the server which EEG device to open. This is
+	most likely the next message send after verifying with DEVICE GET that
+	the desired device driver is available.
+
+	Arguments:
+	name - The name of the device to use
+
+> DEVICE PROVIDE <name1> <name2> <name3> ...
+	Response to DEVICE GET. 
+
+	Arguments:
+    A list containing the names of each device driver that is available, to be
+    used with DEVICE SET.
+
+< DEVICE PARAM SET <name> <value> <value> <value> ...
+    Set a parameter of the device. See the documentation of the device
+    for available parameters.
+
+    Arguments:
+    name - The name of the parameter to set.
+    value+ - The new value(s) for the parameter.
+
+> DEVICE PARAM GET <name>
+    Request the value of a parameter of the device. See the documentation
+    of the device for available parameters.
+
+    Arguments:
+    name - The name of the parameter for which the value is requested.
+
+> DEVICE PARAM PROVIDE <name> <value> <value> <value> ...
+    Response to DEVICE PARAM GET. Provides the value of a parameter of the
+    device.
+
+    Arguments:
+    name - The name of the parameter.
+    value+ - The value(s) of the parameter.
+
+> DEVICE OPEN
+    Open the device and start reading data from it. Make sure to set relevant
+    parameters with DEVICE PARAM SET before opening the device.
+
+< CLASSIER GET
+	Get a list of available classifiers from the server.
+
+< CLASSIFIER SET <name>
+	Use this to instuct the server to use a specific classifier. This is
+	most likely the next message send after verifying with CLASSIFIER GET that
+	the desired classifier is available.
+
+	Arguments:
+	name - The name of the classifier to use
+
+> CLASSIFIER PROVIDE <name1> <name2> <name3> ...
+	Response to CLASSIFIER GET. 
+
+	Arguments:
+    A list containing the names of each classifier that is available, to be
+    used with CLASSIFIER SET.
+
+< CLASSIFIER PARAM SET <name> <value> <value> <value> ...
+    Set a parameter of the classifier. See the documentation of the classifier
+    for available parameters.
+
+    Arguments:
+    name - The name of the parameter to set.
+    value+ - The new value(s) for the parameter.
+
+> CLASSIFIER PARAM GET <name>
+    Request the value of a parameter of the classifier. See the documentation
+    of the classifier for available parameters.
+
+    Arguments:
+    name - The name of the parameter for which the value is requested.
+
+> CLASSIFIER PARAM PROVIDE <name> <value> <value> <value> ...
+    Response to CLASSIFIER PARAM GET. Provides the value of a parameter of the
+    classifier.
+
+    Arguments:
+    name - The name of the parameter.
+    value+ - The value(s) of the parameter.
+
+< MARKER <type> <code> [timestamp]
+    Instruct the server to label the EEG stream with a marker-code. Usually,
+    classifiers require the EEG data to be labeled in a certain way for their
+    training algorithms to function properly. See the documentation of the
+    classifiers for details on this.
+
+	Arguments:
+	type - Either 'trigger' or 'switch'. A marker of type trigger marks a single
+	       EEG sample witht the specified code. A marker of type switch will
+           mark all subsequent EEG samples with the specified code.
+
+    code - An integer value ranged [0-255] that serves as a label for the
+           marker. 
+
+    timestamp - A float value to indicate the exact timing of the marker. If
+                omitted the time at which the server receives the MARKER
+                command will be used, which will introduce delayes and is
+                therefore unreliable. Timestamps are generated on Windows by
+                the 'QueryPerformanceTimer()' function and on UNIX systems by
+                the 'time()' function.
+
+< MODE SET <name>
+    Change the operating mode of the servers. There are 4 modes:
+    idle         - doing nothing, initial state.
+    data-collect - collecting data only. This can for instance to be used for
+                   training.
+    training     - server is training the classifier.
+	application  - server is applying the classifier online.
+
+< MODE GET
+    Request the current mode of the server.
+
+> MODE PROVIDE <value>
+    Send whenever the server changes mode or as a response to MODE GET.
+
+    Arguments:
+    value - The name of the current mode of the server.
+
+< RESULT GET
+    Informs the server that a classification result is requested as soon as
+    possible.
+
+> RESULT PROVIDE value+ [timestamp]
+    Whenever the server as a classification result ready, this is passed to the
+    client with the RESULT PROVIDE message. Note that the server can supply
+    results even without explicitly asked with a RESULT GET message.
+
+    Arguments:
+    values    - A list of values that represent the classification result.
+    timestamp - An optional timestamp for which the classification result is
+                valid if the result is time sensitive. This can for instance be
+                the onset of a trial or the exact moment a change in SSVEP
+                response is detected.
+
+< PING
+    Request a PONG response from the server to verify its responsiveness.
+
+> PONG
+    Response to PING message: response from the server that it is still alive.   
+
+> ERROR <code> <message>
+    Send by the server whenever an error occurs.
+
+    Arguments:
+    code - Unique integer value representing the error.
+    message - Human readable description of the error.
+
+** Example exchange **
+
+< DEVICE GET
+> DEVICE PROVIDE "emulator" "epoc" "imec-be" "imec-nl"
+< DEVICE SET "imec-be"
+< DEVICE PARAM SET "port" "COM6"
+< DEVICE PARAM SET "buffer_size_seconds" 1.5
+< DEVICE PARAM SET "bdf_file" "data.bdf"
+< DEVICE OPEN
+... EEG device is opened, data is being stored in BDF file ...
+< CLASSIFIER GET
+> CLASSIFIER PROVIDE "ssvep" "p300"
+< CLASSIFIER SET "awesome-cool-new-super-classifer"
+> ERROR 404 "Requested classifier not available"
+< CLASSIFIER SET "p300"
+> MODE PROVIDE "idle"
+< CLASSIFIER PARAM SET "recording-id" "test-recording-01"
+< CLASSIFIER PARAM SET "subject-info" "Subject 01, age: 23, handedness: right"
+< CLASSIFIER PARAM SET "num-repetitions" 10
+< CLASSIFIER PARAM SET "window" 0.0 1.0
+< CLASSIFIER PARAM SET "bandpass" 0.5 15.0
+< MODE SET "data-collect"
+... server waiting a minute for imec-be device output to stabilize ...
+> MODE PROVIDE "data-collect"
+... training sequence begins ...
+< MARKER "trigger" 1 1859049489.345
+< MARKER "trigger" 2 1859049489.544
+< MARKER "trigger" 3 1859049489.749
+< MARKER "trigger" 1 1859049489.952
+... and so forth ...
+< MODE SET "training"
+> MODE PROVIDE "training"
+... server starts lengthy calculation ...
+< PING
+> PONG
+< PING
+> PONG
+> MODE PROVIDE "idle"
+... server is done ...
+> RESULT PROVIDE "training-result" "...base64 encoded PNG file..."
+< MODE SET "application"
+> MODE PROVIDE "application"
+... application starts ...
+< MARKER "trigger" 1 1859049531.345
+< MARKER "trigger" 2 1859049531.544
+< MARKER "trigger" 3 1859049531.749
+> RESULT PROVIDE "2" 1859049531.544
+... user selection option 2 ...
+
+
+
+
+** Device drivers available: **
+
+Parameters shared by all devices:
+"bdf_file" <string>
+Filename of a BDF file to write recorded data to. Any previous data in the file
+will be overwritten.
+
+"timing_mode" <string>
+Selects one of 5 different strategies to label the data with timing information.
+Since many devices are wireless and offer no time synchronization, it must be
+estimated by a combination of the system timer and assumptions about the
+sample rate of the device. Possible values for "timing_mode" are:
+    "begin_read_relative": The default. Before every read call to the device
+    (interval depends on the value of "buffer_size_seconds") it marks the time
+    using the system timer and uses this as the timing for the first data frame.
+    The rest of the data that was read will be labeled by assuming a fixed
+    sample rate. Generally a good tradeoff if the sample rate of the device is
+    more or less accurate.
+
+    "end_read_relative": As "begin_read_relative", but it marks the time after
+    the read call from the device has returned and labeles the data in
+    retrospect assuming a fixed sample rate of the device. This mode assumes
+    that data becomes available as data is being read, which is usually not the
+    case, so consider using "begin_read_relative".
+
+    "estimated_sample_rate": This mode does not assume that the sample rate of
+    the device is known or stable, and relies solely on the system timer. If the
+    device is wireless, this will result in small random timing errors as
+    packets are buffered, lost, found, etc. 
+
+    "smoothed_sample_rate": This mode does assume that the sample rate of the
+    device is more or less stable, but unknown. It works like
+    "estimated_sample_rate", but keeps a running average of the sample rate (a
+    window of 10 seconds) to smooth out its timing errors.
+
+    "fixed": Only labels the very first frame (T0) using the system timer, from
+    that point onwards, assumes a fixed sample rate of the device. If the sample
+    rate of the device is not constant or not exactly specified (which is often
+    the case), timing will 'drift' away. Use this one with care.
+
+
+* The Emulator ("emulator") *
+
+This is not an actual device. This driver pretends a device is attached, which
+is useful for testing your code without access to actual hardware. The data it
+generates is either random noise, or you can supply a BDF file to read data from
+and play it back including any labeling present in the file. The default timing
+strategy for this device is "fixed".
+
+Parameters:
+"buffer_size_seconds" <float>
+Size of the internal buffer. Default to 0.5 seconds.
+
+"bdf_playback_file" <string>
+Filename of a BDF file to read data from for playback.
+
+"nchannels" <int>
+Number of channels to emulate. Defaults to 8. (Cannot be used in combination
+with "bdf_playback_file").
+
+"samplerate" <float>
+Samplerate of data to emulate. Defaults to 1000Hz. (Cannot be used in
+combination with "bdf_playback_file").
+
+
+* The Emotive EPOC ("epoc") *
+
+This is the wireless EPOC device produced by Emotiv. The Emotiv Developer
+Toolkit must be installed in order to use this device, as it depends on edk.dll.
+Be aware that the device offers no time synchronization, but has a stable sample
+rate. The default timing strategy for this device is "begin_read_relative".
+
+Parameters:
+No specific parameters for this device.
+
+* The IMEC device developed in Belgium ("imec-be") *
+
+Our first 'real' EEG device we had access to. Be aware of the fact that its
+sample rate is not stable. The detault timing strategy for this device is
+"smoothed_sample_rate" .
+
+Parameters:
+"port" <string>
+COM port on which the device is attached. If this parameter is not supplied, an
+automatic scan is performed to determine the COM port, which usually works
+unless multiple EEG devices are connected. On windows, the format of the
+parameter is "COM#" where # can be any number. On UNIX systems, the parameter is
+the absolute pathname to the device (for example "/dev/tty.usb10001").
+
+"test" <int>
+Set this to 1 to enable the test mode of the device. In the test mode, the
+device will output a simulated brain response with a different phase on each
+channel. Useful for debugging purposes. Default value is 0.
+
+* The IMEC device developed in the Netherlands ("imec-nl") *
+
+An updated version of the IMEC-BE device which has a more stable sample rate.
+The default timing strategy for this device is "begin_read_relative".
+
+Parameters:
+"port" <string>
+COM port on which the device is attached. If this parameter is not supplied, an
+automatic scan is performed to determine the COM port, which usually works
+unless multiple EEG devices are connected. On windows, the format of the
+parameter is "COM#" where # can be any number. On UNIX systems, the parameter is
+the absolute pathname to the device (for example "/dev/tty.usb10001").
+
+
+** Classifiers available **
+
+* An on/off SSVEP detector based on the SLIC algorithm ("ssvep-slic") * 
+
+The paradigm is that there is a single SSVEP stimulus on the screen. The
+classifier indicates whether the user is looking at the stimulus or looking away
+from it.
+
+Training data consists of a sequence for some periods where the user is looking
+at the stimulus, labeled with a 'switch' marker valued 1, intermixed with
+periods where the user is looking away from the stimulus, labeled with a
+'switch' marker valued 2.
+
+The results come in the form of:
+    RESULT PROVIDE slic-value looking
+Where 'slic-value' is a float containing the current output value of the SLIC
+algorithm, useful for displaying on the screen. 'looking' is 1 when the user is
+looking at the SSVEP stimulus and 0 otherwise.
+
+Parameters:
+"freq" <float>
+The frequency of the SSVEP stimulus. Be sure to always set this parameter. It
+defaults to 12.8 Hz.
+
+"thresholds" <float> <float>
+Setting/getting the high and low thresholds of the classifier. These are
+determined during the training phase but can be tweaked during application.
+
+"window_size" <float>
+"window_step" <float>
+The size and step parameters of the sliding window in seconds. A bigger window
+means a more reliable classification result at the cost of a larger delay before
+this result is reached. By default "window_size" is 1.0 and "window_step" is 0.5 seconds.
+When using the EPOC, try setting the "window_size" to at least 1.5 for better
+accuracy. The "window_step" is best kept at the same value as
+"buffer_size_seconds".
+
+"bandpass" <float> <float>
+The hipass and lopass frequencies in Hz of the bandpass filter applied to the
+data. By default this is 0.3 -- 30 Hz.
+
+
+* A general purpose P300 classifier ("p300") *
+
+Presented with multiple options on the screen, the user chooses one to pay
+attention to. The options are highlighted one by one and the user counts the
+number of times his chosen option is highlighted. The classifier will decect the
+P300 potential ilicited by the chosen selection option.
+
+Training data consists of a sequence of N options. The user will focus on each
+option, marked by the 'trigger' marker valued 100 + option. For example, if the
+user is paying attention to option 3, the value of the marker is 103. After this
+marker, each time a selection option is highlighted, a 'trigger' marker with the
+number of the highlighted option is send. When the user focuses on another
+selection option, a new 'trigger' marker values 100 + option is required to
+indicate this.
+
+The results come in the form of:
+    RESULT PROVIDE lda-scores+ selected_option
+Where 'lda_scores+' are the raw values returned by the LDA step of the
+classifier, useful for displaying on the screen. 'selected_option' is 0 if the
+classifier does not know, and >0 to indicate the selected option.
+
+Parameters:
+"num_options" <int>
+Required parameter. Sets the number of options on the screen. Set this first
+during training, and later on during the application whenever the number of
+options changes.
+
+"num_repetitions" <int>
+The number of times each option is highlighted. The classifier collects
+"num_repetitions" of trials for each option before averaging them to form ERPs.
+
+"classifications_needed" <int>
+Defaults to 1. Setting a value higher than 1 will cause the classifier to
+require at least this much coherent classifications before reporting a detected
+choice. This can be used for creating a self-paced BCI.
+
+"target_sample_rate" <float>
+Signal is downsampled to "target_sample_rate" before attempting classification.
+The default value is 128 Hz.
+
+"window" <float> <float>
+Sets the window that is extracted around the onset of each trial. Values are in
+seconds. The default is 0.0 -- 1.0 seconds. Try setting this to 0.2 -- 0.5 to
+only capture the P300 potential.
+
+"bandpass" <float> <float>
+The hipass and lopass frequencies in Hz of the bandpass filter applied to the
+data. By default this is 0.5 -- 15 Hz.
