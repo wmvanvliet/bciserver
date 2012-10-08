@@ -119,7 +119,7 @@ means server to client.
 	Get a list of available classifiers from the server.
 
 < CLASSIFIER SET <name>
-	Use this to instuct the server to use a specific classifier. This is
+	Use this to instruct the server to use a specific classifier. This is
 	most likely the next message send after verifying with CLASSIFIER GET that
 	the desired classifier is available.
 
@@ -178,11 +178,12 @@ means server to client.
                 the 'time()' function.
 
 < MODE SET <name>
-    Change the operating mode of the servers. There are 4 modes:
+    Change the operating mode of the server. There are 4 modes:
     idle         - doing nothing, initial state.
-    data-collect - collecting data only. This can for instance to be used for
-                   training.
-    training     - server is training the classifier.
+    data-collect - collecting data only. This mode is used by the classifiers
+                   to gather training data.
+    training     - server is training the classifier on the previously
+                   gathered data, performing the sometimes lengthy calculations.
 	application  - server is applying the classifier online.
 
 < MODE GET
@@ -226,21 +227,22 @@ means server to client.
 ** Example exchange **
 
 < DEVICE GET
-> DEVICE PROVIDE "emulator" "epoc" "imec-be" "imec-nl"
+> DEVICE PROVIDE "emulator" "epoc" "imec-be" "imec-nl" "biosemi"
 < DEVICE SET "imec-be"
 < DEVICE PARAM SET "port" "COM6"
 < DEVICE PARAM SET "buffer_size_seconds" 1.5
 < DEVICE PARAM SET "bdf_file" "data.bdf"
+< DEVICE PARAM SET "recording-id" "test-recording-01"
+< DEVICE PARAM SET "subject-info" "Subject 01, age: 23, handedness: right"
 < DEVICE OPEN
 ... EEG device is opened, data is being stored in BDF file ...
 < CLASSIFIER GET
-> CLASSIFIER PROVIDE "ssvep" "p300"
+> CLASSIFIER PROVIDE "ssvep-slic" "p300"
 < CLASSIFIER SET "awesome-cool-new-super-classifer"
 > ERROR 404 "Requested classifier not available"
 < CLASSIFIER SET "p300"
 > MODE PROVIDE "idle"
-< CLASSIFIER PARAM SET "recording-id" "test-recording-01"
-< CLASSIFIER PARAM SET "subject-info" "Subject 01, age: 23, handedness: right"
+< CLASSIFIER PARAM SET "num-targets" 3
 < CLASSIFIER PARAM SET "num-repetitions" 10
 < CLASSIFIER PARAM SET "window" 0.0 1.0
 < CLASSIFIER PARAM SET "bandpass" 0.5 15.0
@@ -269,6 +271,7 @@ means server to client.
 < MARKER "trigger" 1 1859049531.345
 < MARKER "trigger" 2 1859049531.544
 < MARKER "trigger" 3 1859049531.749
+... and so forth ...
 > RESULT PROVIDE "2" 1859049531.544
 ... user selection option 2 ...
 
@@ -295,7 +298,7 @@ sample rate of the device. Possible values for "timing_mode" are:
     more or less accurate.
 
     "end_read_relative": As "begin_read_relative", but it marks the time after
-    the read call from the device has returned and labeles the data in
+    the read call from the device has returned and labels the data in
     retrospect assuming a fixed sample rate of the device. This mode assumes
     that data becomes available as data is being read, which is usually not the
     case, so consider using "begin_read_relative".
@@ -314,6 +317,25 @@ sample rate of the device. Possible values for "timing_mode" are:
     that point onwards, assumes a fixed sample rate of the device. If the sample
     rate of the device is not constant or not exactly specified (which is often
     the case), timing will 'drift' away. Use this one with care.
+
+"buffer_size_seconds" <float>
+Data is continuously read from the device in chunks. This parameter controls
+the size of these chunks in seconds. The smaller the chunks, the more
+responsive the system can be, at the expense of using more system resources.
+Defaults to 0.5.
+
+"channel_names" <string>+
+Sets a name for each channel. The length of the list must be equal or greater
+than the number of channels available on the device. Any excess names will be
+ignored. For the epoc and biosemi devices, the channel names default to the
+standard 10-20 labels of the electrode positions. For the emulator and imec
+devices, which have no default electrode positions, the channels are numbered
+by default.
+
+"target_channels" (<int>|<string>)+
+Selects the channels to record from either by integer index or name (see also the
+"channel_names" parameter). Data from channels that are not selected is
+discarded. Defaults to recording from all available channels.
 
 
 * The Emulator ("emulator") *
@@ -353,7 +375,7 @@ No specific parameters for this device.
 * The IMEC device developed in Belgium ("imec-be") *
 
 Our first 'real' EEG device we had access to. Be aware of the fact that its
-sample rate is not stable. The detault timing strategy for this device is
+sample rate is not stable. The default timing strategy for this device is
 "smoothed_sample_rate" .
 
 Parameters:
@@ -381,6 +403,39 @@ automatic scan is performed to determine the COM port, which usually works
 unless multiple EEG devices are connected. On windows, the format of the
 parameter is "COM#" where # can be any number. On UNIX systems, the parameter is
 the absolute pathname to the device (for example "/dev/tty.usb10001").
+
+* The Biosemi ActiveTwo *
+
+Our research grade 32 channel EEG system developed by Biosemi. In addition to
+having a stable sample rate, this device offers synchronization using a
+trigger cable that is connected to the parallel port. By default, the trigger
+cable is assumed not to be present and the timing will be estimated using
+"begin_read_relative". See the "status_as_markers" parameter to use the
+trigger cable.
+
+Also remember that the default reference of the device is the CMS electrode,
+which is most likely not optimal. Use the "reference_channels" parameter to
+supply the desired reference (for example, two external channels placed on the
+mastoids).
+
+Parameters:
+"status_as_markers" <int>
+Set to 1 to use the status channel to extract markers. When set, all MARKER
+messages will be ignored and instead the values of the trigger cable are
+taken. When set to 1, timing mode is set to "fixed", when set to 0, timing
+mode is set to "begin_read_relative". Don't forget to supply the LPT port
+the trigger cable is connected to using the "port" parameter. Trigger cable is
+only supported on windows for the moment. Defaults to 0.
+
+"port" <string>
+LPT port on which the trigger cable is attached in the form of 'LPT#'.
+Defaults to "LPT1".
+
+"reference_channels" (<int>|<string>)+ 
+Channel(s) to use as a reference. Can be specified either as an integer index
+or by their name (see also the "channel_names" parameter all devices share).
+If more than one channel is specified, their average is used.
+
 
 
 ** Classifiers available **
@@ -414,11 +469,11 @@ determined during the training phase but can be tweaked during application.
 "window_size" <float>
 "window_step" <float>
 The size and step parameters of the sliding window in seconds. A bigger window
-means a more reliable classification result at the cost of a larger delay before
-this result is reached. By default "window_size" is 1.0 and "window_step" is 0.5 seconds.
-When using the EPOC, try setting the "window_size" to at least 1.5 for better
-accuracy. The "window_step" is best kept at the same value as
-"buffer_size_seconds".
+means a more reliable classification result at the cost of a larger delay
+before this result is reached. By default "window_size" is 1.0 and
+"window_step" is 0.5 seconds. When using the EPOC, try setting the
+"window_size" to at least 1.5 for better accuracy. The "window_step" is best
+kept at the same value as "buffer_size_seconds".
 
 "bandpass" <float> <float>
 The hipass and lopass frequencies in Hz of the bandpass filter applied to the
