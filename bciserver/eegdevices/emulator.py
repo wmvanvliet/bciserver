@@ -54,7 +54,8 @@ class Emulator(Recorder):
         self.digital_max = 4094
         self.gain = ((self.physical_max-self.physical_min) /
                     float(self.digital_max-self.digital_min))
-        self.feat_lab = ['channel %02d' % x for x in range(self.nchannels)]
+        self.channel_names = ['channel %02d' % x for x in range(self.nchannels)]
+        self.feat_lab = list(self.channel_names)
 
         self.bdf_playback_file = bdf_playback_file
 

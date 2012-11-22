@@ -55,14 +55,8 @@ class IMECBE(Recorder):
         self.digital_max = 4094
         self.gain = ((self.physical_max-self.physical_min) /
                      float(self.digital_max-self.digital_min))
-        self.feat_lab = ['Fz',
-                         'FCz',
-                         'Cz',
-                         'CP1',
-                         'CP2',
-                         'P3',
-                         'Pz',
-                         'P4']
+        self.channel_names = ['Fz', 'FCz', 'Cz', 'CP1', 'CP2', 'P3', 'Pz', 'P4']
+        self.feat_lab = list(self.channel_names)
 
         self.port = port
         self.test = test
