@@ -273,6 +273,9 @@ class BIOSEMI(Recorder):
 
         elif name == 'reference_channels':
             return self.reference_channels
+        
+        elif name == 'status_as_markers':
+            return 1 if self.status_as_markers else 0
 
         else:
             return False

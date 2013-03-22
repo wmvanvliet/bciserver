@@ -21,7 +21,7 @@ class ClientHandler:
 (?:                     # switch on different datatypes
     
     (
-        [^-\d."][^\s$]+  # a single word (without quotes)
+        [^-\d."][^\s$]+ # a single word (without quotes)
         (?:\s+|$)       # optional whitespace
     )
 
@@ -42,14 +42,14 @@ class ClientHandler:
     |                
 
     (                   
-        -?\d+             # an integer number
+        -?\d+           # an integer number
         (?:\s+|$)       # optional whitespace
     )               
 
     |               
 
     (                   
-        -?\d*.\d+         # a floating point number
+        -?\d*.\d+       # a floating point number
         (?:\s+|$)       # optional whitespace
     )               
 
