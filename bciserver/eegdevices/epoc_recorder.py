@@ -41,7 +41,8 @@ class EPOC(Recorder):
 
         self.logger = logging.getLogger('EPOC Recorder')
 
-        self.feat_lab = ['AF3', 'AF4', 'F3', 'F4', 'F7', 'F8', 'FC5', 'FC6', 'P7', 'P8', 'T7', 'T8', 'O1', 'O2']
+        self.channel_names = ['AF3', 'AF4', 'F3', 'F4', 'F7', 'F8', 'FC5', 'FC6', 'P7', 'P8', 'T7', 'T8', 'O1', 'O2']
+        self.feat_lab = list(self.channel_names)
         self.dataChannels = numpy.array([
             epoc.channel.AF3,
             epoc.channel.AF4,

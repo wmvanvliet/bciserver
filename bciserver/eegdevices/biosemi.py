@@ -53,13 +53,15 @@ class BIOSEMI(Recorder):
 
         self.logger = logging.getLogger('BIOSEMI Recorder')
 
-        self.feat_lab = [
+        self.channel_names = [
             'Fp1', 'AF3', 'F7', 'F3', 'FC1', 'FC5', 'T7', 'C3',
             'CP1', 'CP5', 'P7', 'P3', 'Pz', 'PO3', 'O1', 'Oz',
             'O2', 'PO4', 'P4', 'P8', 'CP6', 'CP2', 'C4', 'T8',
             'FC6', 'FC2', 'F4', 'F8', 'AF4', 'Fp2', 'Fz', 'Cz',
             'EXG1', 'EXG2', 'EXG3', 'EXG4', 'EXG5', 'EXG6', 'EXG7', 'EXG8'
         ]
+
+        self.feat_lab = list(self.channel_names)
         
         if not self.status_as_markers:
             self.reader = biosemi_reader.BiosemiReader(
@@ -245,10 +247,10 @@ class BIOSEMI(Recorder):
 
             for channel_name in values:
                 if type(channel_name) == str:
-                    if not channel_name in self.feat_lab:
+                    if not channel_name in self.channel_names:
                         raise DeviceError('Channel %s is not a valid channel for this device.' % channel_name)
 
-                    reference_channels.append( self.feat_lab.index(channel_name) )
+                    reference_channels.append( self.channel_names.index(channel_name) )
                 elif type(channel_name) == float:
                     raise DeviceError('Invalid channel index or name: %f, please use integers or strings.' % channel_name)
                 else:
@@ -271,6 +273,9 @@ class BIOSEMI(Recorder):
 
         elif name == 'reference_channels':
             return self.reference_channels
+        
+        elif name == 'status_as_markers':
+            return 1 if self.status_as_markers else 0
 
         else:
             return False
