@@ -41,11 +41,12 @@ class SSVEP(Classifier):
         self.bp_node = psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(4, [self.bandpass[0]/(s/2.0), self.bandpass[1]/(s/2.0)]) )
         self.resample_node = psychic.nodes.Resample(self.target_sample_rate, max_marker_delay=1)
         self.ica_node = golem.nodes.ICA()
-        self.window_node = psychic.nodes.OnlineSlidingWindow(int(self.window_size*self.target_sample_rate), int(self.window_step*self.target_sample_rate))
-        self.slic_node = psychic.nodes.Slic([self.freq], self.target_sample_rate)
+        self.window_node = psychic.nodes.OnlineSlidingWindow(int(self.window_size*self.target_sample_rate), int(self.window_step*self.target_sample_rate), ref_point=1.0)
+        self.slic_node = psychic.nodes.SLIC(self.target_sample_rate, [self.freq])
         self.thres_node = golem.nodes.Threshold([0,1],feature=0)
+
         self.preprocessing = golem.nodes.Chain([self.bp_node, self.resample_node])
-        self.classification = golem.nodes.Chain([self.window_node, self.slic_node, self.thres_node])
+        self.classification = golem.nodes.Chain([self.window_node, self.slic_node])
         self.pipeline_ica = golem.nodes.Chain([self.preprocessing, self.ica_node, self.classification])
         self.pipeline_no_ica = golem.nodes.Chain([self.preprocessing, self.classification])
 
@@ -89,6 +90,9 @@ class SSVEP(Classifier):
             self.pipeline = self.pipeline_no_ica
     
         self.classification.train(d2)
+        self.window_node.reset()
+        d3 = self.classification.apply(d2)
+        self.thres_node.train(d3)
         self.logger.info('Training complete')
 
         # Send a debug plot to client
@@ -106,11 +110,12 @@ class SSVEP(Classifier):
 
         try:
             result = self.pipeline.apply(d)
-            self.logger.debug('Result was: %s:%s at %s' % (result.xs[:,0], result.ys[:,0], result.ids))
+            cl = self.thres_node.apply(result)
+            self.logger.debug('Result was: %s:%s at %s' % (result.X[0,:], cl.xs[0,:], result.I))
             # send result to client
             if self.engine != None:
-                for i in range(0, result.ys.shape[0]):
-                    self.engine.provide_result([result.xs[i,0], int(result.ys[i,0])])
+                for i in range(0, cl.ninstances):
+                    self.engine.provide_result([result.X[0,i], int(cl.X[0,i])])
         except Exception as e:
             self.logger.warning('%s' % e.message)
 
@@ -119,28 +124,29 @@ class SSVEP(Classifier):
 
         self.window_node.reset()
         d2 = self.pipeline.apply(d)
+        d3 = self.thres_node.apply(d2)
         fig = plt.figure()
 
         ax = fig.add_subplot(311)
-        ax.plot(d.ids, d.xs[:,0])
+        ax.plot(d.I[0,:], d.X[0,:])
         ax.set_ylabel('mV')
-        ax.set_xlim([numpy.min(d.ids), numpy.max(d.ids)])
+        ax.set_xlim([numpy.min(d.I), numpy.max(d.I)])
         ax.grid()
 
         ax = fig.add_subplot(312)
-        ax.plot(d2.ids, d2.xs[:,0])
+        ax.plot(d2.I[0,:], d2.X[0,:])
         ax.axhline(self.thres_node.hi, color='r')
         ax.axhline(self.thres_node.lo, color='g')
         ax.set_ylabel('mean(correlation)')
-        ax.set_xlim([numpy.min(d2.ids), numpy.max(d2.ids)])
+        ax.set_xlim([numpy.min(d2.I), numpy.max(d2.I)])
         ax.grid()
 
         ax = fig.add_subplot(313)
-        ax.plot(d2.ids, d2.ys[:,0], '-r')
-        ax.plot(d.ids, d.ys[:,0], '-b')
+        ax.plot(d3.I[0,:], d3.X[0,:], '-r')
+        ax.plot(d2.I[0,:], d2.Y[0,:], '-b')
         ax.set_ylabel('fixating?')
         ax.set_xlabel('time (s)')
-        ax.set_xlim([numpy.min(d2.ids), numpy.max(d2.ids)])
+        ax.set_xlim([numpy.min(d2.I), numpy.max(d2.I)])
         ax.set_ylim([-0.2, 2])
         ax.grid()
 
