@@ -33,9 +33,19 @@ class BIOSEMI(Recorder):
                              BIOSEMI device before it will be decoded. Defaults
                              to 0.5 seconds.
 
+        status_as_markers:   Set to True to use the parallel port trigger cable
+                             as status channel.
+
         bdf_file:            Dump all recorded data (regardless whether the
                              device is in capture more or not) to a BDF file
                              with the given filename.
+
+        lpt_port:            Name of the LPT port ('LPT#') to which the trigger
+                             cable is connected. This parameter is ignored when
+                             status_as_markers is set to False.
+
+        reference_channels:  List of integer indices or channel names indicating
+                             the channels to use as a reference.
         """
 
         self.sample_rate = 2048
@@ -206,7 +216,7 @@ class BIOSEMI(Recorder):
 
             self.marker_lock.acquire()
 
-            print lpt.Out32(self.lpt_address, code)
+            lpt.Out32(self.lpt_address, code)
             delay = precision_timer() - timestamp
 
             if(type == 'trigger'):

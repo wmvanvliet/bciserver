@@ -4,6 +4,7 @@ Copyright (c) 2011 Marijn van Vliet
 '''
 import os,time
 import ctypes
+import logging
 
 
 def precision_timer():
@@ -22,23 +23,33 @@ from recorder import Recorder
 from recorder import Marker
 from recorder import DeviceError
 from emulator import Emulator
-from imecbe import IMECBE
-from imecnl import IMECNL
-available_devices = {'emulator':Emulator,
-                     'imec-be':IMECBE,
-                     'imec-nl':IMECNL}
+available_devices = {'emulator':Emulator}
+
+device_errors = {}
 
 try:
     import epoc
     from epoc_recorder import EPOC
     available_devices['epoc'] = EPOC
-except ImportError:
-    pass # silently fail when EPOC is not available
+except ImportError as e:
+    device_errors['epoc'] = e
 
 try:
     import biosemi as bs
     from biosemi import BIOSEMI
     available_devices['biosemi'] = BIOSEMI
+except ImportError as e:
+    device_errors['biosemi'] = e
 
-except ImportError:
-    pass # silently fail when BIOSEMI is not available
+try:
+    from imecbe import IMECBE
+    available_devices['imec-be'] = IMECBE
+except ImportError as e:
+    device_errors['imec-be'] = e
+
+try:
+    from imecnl import IMECNL
+    available_devices['imec-nl'] = IMECNL
+except ImportError as e:
+    device_errors['imec-nl'] = e
+
