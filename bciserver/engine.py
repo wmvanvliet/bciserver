@@ -231,7 +231,7 @@ Copyright computational neuroscience group, K.U.Leuven (2013)
 
     # Check if all devices loaded properly
     for module, error in eegdevices.device_errors.items():
-        logging.getLogger('EEG-Devices').info('Device %s unavailable: %s' % (module, error.message))
+        logging.getLogger('EEG-Devices').debug('Device %s unavailable: %s' % (module, error.message))
 
     # Start engine
     e = Engine( int(args.network_port) )
