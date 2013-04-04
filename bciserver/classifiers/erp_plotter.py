@@ -10,7 +10,7 @@ from classifier import Classifier
 from ..bci_exceptions import ClassifierException
 
 class ERPPlotter(Classifier):
-    """ Implements an online P300 classifier.
+    """ Implements a classifier that just plots the ERP.
     This class acts as a consumer to a Recorder
     """
     def __init__(self, engine, recorder, window=(0.0, 1.0), bandpass=[0.5, 15]):
