@@ -81,6 +81,7 @@ class ERPPlotter(Classifier):
     
     def _generate_debug_image(self, d):
         """ Generate image describing the training data. """
+        d = golem.DataSet(cl_lab=self.cl_lab, default=d)
         fig = psychic.plot_erp(d, self.target_sample_rate, enforce_equal_n=False)
         fig.set_size_inches(7,11)
         return fig
@@ -115,6 +116,7 @@ class ERPPlotter(Classifier):
 
         elif name == 'cl_lab':
             self.cl_lab = value
+            return True
 
         elif name == 'format':
             if len(value) < 1:
@@ -124,6 +126,7 @@ class ERPPlotter(Classifier):
                 raise ClassifierException('Invalid value for format.')
 
             self.format = value[0]
+            return True
 
         return False
 
