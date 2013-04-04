@@ -309,9 +309,9 @@ means server to client.
 > PONG
 < PING
 > PONG
-> MODE PROVIDE "idle"
 ... server is done ...
 > RESULT PROVIDE "training-result" "...base64 encoded PNG file..."
+> MODE PROVIDE "idle"
 < MODE SET "application"
 > MODE PROVIDE "application"
 ... application starts ...
