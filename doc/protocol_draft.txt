@@ -526,20 +526,60 @@ kept at the same value as "buffer_size_seconds".
 The hipass and lopass frequencies in Hz of the bandpass filter applied to the
 data. By default this is 0.3 -- 30 Hz.
 
+* A 'classifier' that plots an ERP ("erp-plotter") *
+
+Used for demonstration purposes. The client presents a set of stimuli to the
+user. Each stimulus is presented multiple times. This classifier will cut out
+EEG segments in a given window around the stimulus onsets. The event-related
+potential (ERP) is obtained for each stimulus, by averaging the EEG segments
+corresponding to the moments the stimulus was shown to the user. The resulting
+plot, with all ERPs drawn on top of each other for easy comparison, is returned
+as classification result.
+
+This classifier only uses training data. It does nothing in application mode.
+
+Training data consists of a sequence stimuli, each labeled with their own
+unique integer. Each time a stimulus is shown to the user, a 'trigger' marker
+is send with the corresponding integer label.
+
+After training, the resulting plot comes in the form of:
+    RESULT PROVIDE "training-result" "...base64 encoded png file"
+
+Parameters:
+"target_sample_rate" <float>
+Signal is downsampled to "target_sample_rate", the default value is 128 Hz.
+
+"window" <float> <float>
+Sets the window that is extracted around the onset of each trial. Values are in
+seconds. The default is 0.0 -- 1.0 seconds. Try setting this to 0.2 -- 0.5 to
+only capture the P300 potential.
+
+"bandpass" <float> <float>
+The hipass and lopass frequencies in Hz of the bandpass filter applied to the
+data. By default this is 0.5 -- 15 Hz.
+
+"cl_lab" <string>+
+A list of class labels to use in the plot. Supply one value for each unique
+stimulus.
+
+"format" <string>
+File format of the resulting plot. Defaults to "png", but can be any supported
+by the matplotlib savefig() function:
+  "png", "pdf", "ps", "eps" and "svg"
 
 * A general purpose P300 classifier ("p300") *
 
 Presented with multiple options on the screen, the user chooses one to pay
 attention to. The options are highlighted one by one and the user counts the
-number of times his chosen option is highlighted. The classifier will decect the
-P300 potential ilicited by the chosen selection option.
+number of times his chosen option is highlighted. The classifier will detect the
+P300 potential elicited by the chosen selection option.
 
 Training data consists of a sequence of N options. The user will focus on each
 option, marked by the 'trigger' marker valued 100 + option. For example, if the
 user is paying attention to option 3, the value of the marker is 103. After this
 marker, each time a selection option is highlighted, a 'trigger' marker with the
 number of the highlighted option is send. When the user focuses on another
-selection option, a new 'trigger' marker values 100 + option is required to
+selection option, a new 'trigger' marker valued 100 + option is required to
 indicate this.
 
 The results come in the form of:
