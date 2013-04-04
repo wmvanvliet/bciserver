@@ -4,7 +4,7 @@ import re
 from collections import deque
 
 from bci_exceptions import *
-from eegdevices import precision_timer
+from eegdevices import DeviceError, precision_timer
 
 class ClientHandler:
     def __init__(self, socket, engine):
@@ -159,6 +159,10 @@ class ClientHandler:
             except ClassifierException as e:
                 self.sendLine('ERROR 000 "%s"' % e)
                 self.logger.error('ERROR 000 "%s"' % e)
+            except DeviceError as e:
+                self.sendLine('ERROR 000 "%s"' % e)
+                self.logger.error('ERROR 000 "%s"' % e)
+                raise
             except Exception as e:
                 self.sendLine('ERROR 000 "%s"' % e)
                 self.logger.error('ERROR 000 "%s"' % e)
