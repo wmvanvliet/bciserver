@@ -102,6 +102,10 @@ class BIOSEMI(Recorder):
 
     def _open(self):
         self.logger.debug('Opening BIOSEMI device...')
+
+        if self.status_as_markers:
+            lpt.Out32(self.lpt_address, 0)
+
         try:
             self.reader.open()
         except Exception as e:
