@@ -1,15 +1,24 @@
 import matplotlib.pyplot as plt
 
 import golem, psychic
-import numpy
 import scipy
+import scipy.signal
 
 from classifier import Classifier
 from ..bci_exceptions import ClassifierException
 
 class SSVEP(Classifier):
-    """ Implements an online SSVEP classifier. """
-    def __init__(self, engine, recorder, window_size=1.0, window_step=0.5, freq=12.8, bandpass=[2, 45]):
+    """
+    Implements an online SSVEP classifier that can desinguish between flickering
+    stimuli. Based on the Minimum Energy Combination method.
+
+    Chumerin, N., Manyakov, N. V, Combaz, A., Robben, A., van Vliet, M., Van
+    Hulle, M. M., Manyakov, N., et al. (2011). Steady state visual evoked
+    potential based computer gaming - The Maze. The 4th International ICST
+    Conference on Intelligent Technologies for Interactive Entertainment
+    (INTETAIN). Genoa, Italy, May 25-27, in press.
+    """
+    def __init__(self, engine, recorder, window_size=2.0, window_step=0.5, freqs=[60/4., 60/5., 60/6., 60/7.], bandpass=[2, 45], cl_type='MNEC'):
         """ Constructor.
 
         Required parameters:
@@ -18,19 +27,20 @@ class SSVEP(Classifier):
         Keyword parameters (configures the classifier): 
         window_size: The window size in seconds to use on the data
         window_step: The window step in seconds to use on the data
-        freq: The frequency in Hertz of the SSVEP stimulus to look for
+        freqs: The frequencies in Hertz of the SSVEP stimuli to look for.
         bandpass: [lo, hi] cutoff frequencies for the bandpass filter to use on the data
         """
         self.window_size = window_size
         self.window_step = window_step
-        self.freq = freq
+        self.freqs = freqs
         self.bandpass = bandpass
         self.pipeline = None
+        self.cl_type = cl_type
         self.target_sample_rate = 128
     
         Classifier.__init__(self, engine, recorder)
 
-        self.logger.info("freq: %f" % freq)
+        self.logger.info("freqs: %s" % freqs)
         self.logger.info("sample_rate: %f" % recorder.sample_rate)
         self.logger.info("window_size: %f" % window_size)
         self.logger.info("window_step: %f" % window_step)
@@ -38,17 +48,23 @@ class SSVEP(Classifier):
 
     def _construct_pipeline(self):
         self.logger.info('Creating pipeline')
-        self.bp_node = psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(4, [self.bandpass[0]/(s/2.0), self.bandpass[1]/(s/2.0)]) )
+        self.bp_node = psychic.nodes.OnlineFilter(None)
         self.resample_node = psychic.nodes.Resample(self.target_sample_rate, max_marker_delay=1)
-        self.ica_node = golem.nodes.ICA()
         self.window_node = psychic.nodes.OnlineSlidingWindow(int(self.window_size*self.target_sample_rate), int(self.window_step*self.target_sample_rate), ref_point=1.0)
-        self.slic_node = psychic.nodes.SLIC(self.target_sample_rate, [self.freq])
-        self.thres_node = golem.nodes.Threshold([0,1],feature=0)
 
-        self.preprocessing = golem.nodes.Chain([self.bp_node, self.resample_node])
-        self.classification = golem.nodes.Chain([self.window_node, self.slic_node])
-        self.pipeline_ica = golem.nodes.Chain([self.preprocessing, self.ica_node, self.classification])
-        self.pipeline_no_ica = golem.nodes.Chain([self.preprocessing, self.classification])
+        if self.cl_type == 'MNEC':
+            self.classifier_node = psychic.nodes.MNEC(self.target_sample_rate, self.freqs, nsamples=int(self.window_size*self.target_sample_rate))
+        elif self.cl_type == 'canoncorr':
+            self.classifier_node = psychic.nodes.CanonCorr(self.target_sample_rate, self.freqs, nsamples=int(self.window_size*self.target_sample_rate))
+        else:
+            raise ClassifierException("Classifier type must be one of: ['MNEC', 'canoncorr']")
+
+        # Go over the nodes and initialize them (to avoid having to train later)
+        self.bp_node.filter = scipy.signal.iirfilter(4, [self.bandpass[0]/(self.target_sample_rate/2.0), self.bandpass[1]/(self.target_sample_rate/2.0)])
+        self.resample_node.old_samplerate = self.recorder.sample_rate
+        self.classifier_node.train_(None)
+        
+        self.pipeline = golem.nodes.Chain([self.bp_node, self.resample_node, self.window_node, self.classifier_node])
 
     def _reset(self):
         """ Reset the classifier. Flushes all collected data."""
@@ -56,51 +72,12 @@ class SSVEP(Classifier):
 
         if self.pipeline:
             self.window_node.reset()
-            self.thres_node.reset()
 
     def _train(self):
-        """ Train the classifier on a dataset. """
-
-        d = self.recorder.read(block=False)
-        if not d:
-            raise ClassifierException('First collect some data before training.')
-
-        # Save a snapshot of the training data to disk
-        d.save('test_data.dat')
-
-        # Convert markers to classes
-        Y = numpy.zeros((3, d.ninstances), dtype=numpy.bool)
-
-        Y[0,:] = (d.Y == 1)[0,:]
-        Y[1,:] = (d.Y == 2)[0,:]
-        Y[2,:] = (d.Y == 3)[0,:]
-
-        d = golem.DataSet(Y=Y, cl_lab=['on','off', 'sweep'], default=d)
-
+        """ Construct and initialize pipeline, which can take some time. """
         self._construct_pipeline()
 
-        # Train the pipeline
-        d2 = self.preprocessing.train_apply(d,d)
-
-        try:
-            d2 = self.ica_node.train_apply(d.get_class(0), d2)
-            self.pipeline = self.pipeline_ica
-        except Exception as e:
-            self.logger.warning('Could not train ICA: %s' % e.message)
-            self.pipeline = self.pipeline_no_ica
-    
-        self.classification.train(d2)
-        self.window_node.reset()
-        d3 = self.classification.apply(d2)
-        self.thres_node.train(d3)
         self.logger.info('Training complete')
-
-        # Send a debug plot to client
-        self._send_debug_image(d)
-
-        self.window_node.reset()
-        self.thres_node.reset()
-
         self.training_complete = True
 
     def _apply(self, d):
@@ -110,67 +87,31 @@ class SSVEP(Classifier):
 
         try:
             result = self.pipeline.apply(d)
-            cl = self.thres_node.apply(result)
-            self.logger.debug('Result was: %s:%s at %s' % (result.X[0,:], cl.xs[0,:], result.I))
+            self.logger.debug('Result was: %s at %s' % (result.X.ravel(), result.I))
             # send result to client
             if self.engine != None:
-                for i in range(0, cl.ninstances):
-                    self.engine.provide_result([result.X[0,i], int(cl.X[0,i])])
+                for i in range(0, result.ninstances):
+                    self.engine.provide_result(result.X.ravel().tolist())
         except Exception as e:
             self.logger.warning('%s' % e.message)
 
-    def _generate_debug_image(self, d):
-        """ Send image describing the training data. """
-
-        self.window_node.reset()
-        d2 = self.pipeline.apply(d)
-        d3 = self.thres_node.apply(d2)
-        fig = plt.figure()
-
-        ax = fig.add_subplot(311)
-        ax.plot(d.I[0,:], d.X[0,:])
-        ax.set_ylabel('mV')
-        ax.set_xlim([numpy.min(d.I), numpy.max(d.I)])
-        ax.grid()
-
-        ax = fig.add_subplot(312)
-        ax.plot(d2.I[0,:], d2.X[0,:])
-        ax.axhline(self.thres_node.hi, color='r')
-        ax.axhline(self.thres_node.lo, color='g')
-        ax.set_ylabel('mean(correlation)')
-        ax.set_xlim([numpy.min(d2.I), numpy.max(d2.I)])
-        ax.grid()
-
-        ax = fig.add_subplot(313)
-        ax.plot(d3.I[0,:], d3.X[0,:], '-r')
-        ax.plot(d2.I[0,:], d2.Y[0,:], '-b')
-        ax.set_ylabel('fixating?')
-        ax.set_xlabel('time (s)')
-        ax.set_xlim([numpy.min(d2.I), numpy.max(d2.I)])
-        ax.set_ylim([-0.2, 2])
-        ax.grid()
-
-        return fig
-
     def set_parameter(self, name, value):
-        if name == 'thresholds':
-            if len(value) < 2 or (type(value[0]) != float and type(value[1]) != int) or (type(value[1]) != float and type(value[1]) != int):
-                raise ClassifierException('This parameter needs two numeric value.')
-
-            if(self.state != 'application'):
-                raise ClassifierException('Can only change this parameter in application mode, after training.')
-
-            self.thres_node.hi = float(value[0])
-            self.thres_node.lo = float(value[1])
-            self.logger.info('Setting new thresholds to %f - %f' % (self.thres_node.hi, self.thres_node.lo))
-            return True
-
         if self.state != 'idle' or self.training_complete:
             raise ClassifierException('Can only change this parameter in idle mode, before training.')
 
         parameter_set = False
 
-        if name == 'window_size':
+        if name == 'cl_type':
+            if value[0] == 'MNEC':
+                self.classifier_node = psychic.nodes.MNEC(self.target_sample_rate, self.freqs, nsamples=int(self.window_size*self.target_sample_rate))
+                parameter_set = True
+            elif value[0] == 'canoncorr':
+                self.classifier_node = psychic.nodes.CanonCorr(self.target_sample_rate, self.freqs, nsamples=int(self.window_size*self.target_sample_rate))
+                parameter_set = True
+            else:
+                raise ClassifierException("cl_type must be one of: ['MNEC', 'canoncorr'].");
+
+        elif name == 'window_size':
             if len(value) < 1 or (type(value[0]) != float and type(value[0]) != int):
                 raise ClassifierException('Invalid value for window size.')
             self.window_size = float(value[0])
@@ -189,10 +130,16 @@ class SSVEP(Classifier):
             self.bandpass = (value[0], value[1])
             parameter_set = True
 
-        elif name == 'freq':
-            if len(value) < 1 or (type(value[0]) != float and type(value[0]) != int):
-                raise ClassifierException('Invalid value for stimulus frequency.')
-            self.freq = float(value[0])
+        elif name == 'freqs':
+            if len(value) < 1:
+                raise ClassifierException('No value given for stimulus frequencies.')
+
+            self.freqs = []
+            for freq in value:
+                if type(freq) != float and type(freq) != int:
+                    raise ClassifierException('Invalid value for stimulus frequency: %s' % freq)
+                self.freqs.append(float(freq))
+
             parameter_set = True
 
         elif name == 'target_sample_rate':
@@ -206,12 +153,7 @@ class SSVEP(Classifier):
         return parameter_set
 
     def get_parameter(self, name):
-        if name == 'thresholds':
-            if not self.training_complete:
-                raise ClassifierException('This parameter is only available after training.')
-            return [self.thres_node.hi, self.thres_node.lo]
-
-        elif name == 'window_step':
+        if name == 'window_step':
             return self.window_step
         elif name == 'window_size':
             return self.window_size
@@ -219,7 +161,7 @@ class SSVEP(Classifier):
             return self.target_sample_rate
         elif name == 'bandpass':
             return self.bandpass
-        elif name == 'freq':
-            return self.freq
+        elif name == 'freqs':
+            return self.freqs
         else:
             return False
