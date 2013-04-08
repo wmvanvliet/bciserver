@@ -8,7 +8,7 @@ server.
 Only one client is allowed to be connected to the server at any time.
 
 For convenient debugging, messages in the protocol are UTF-8 encoded strings,
-separated by a newline (\n) character. This allows for impersonation of a
+separated by return+newline (\r\n) characters. This allows for impersonation of a
 server or client through the netcat (nc) utility. 
 
 The order in which the messages are send or received is not specified to allow
@@ -20,9 +20,9 @@ The messages have the global form of:
 
 ** Grammar **
 
-message: category '\n'
+message: command '\r\n'
 
-category:
+command:
     'DEVICE' 'SET' name
              'GET'
              'PROVIDE' name+
@@ -64,6 +64,53 @@ string: '"' [UTF-8]* '"'
 integer: '-'? [0-9]+
 float: '-'? [0-9]* '.' [0-9]+
 
+
+** Regular expression to tokenize messages **
+
+(?:                     # switch on different datatypes
+    
+    (
+        [^-\d."][^\s$]+ # a single word (without quotes)
+        (?:\s+|$)       # optional whitespace
+    )
+
+    |
+
+        "               # a string, beginning with opening quote
+        (               # start capture of group here
+            (?:         # 
+                \\.     # escaped character
+                |       # 
+                [^"\\]  # anything but ending quote
+            )*
+        )               # end capture of group
+        "               # ending quote
+
+        (?:\s+|$)       # optional whitespace
+
+    |                
+
+    (                   
+        -?\d+           # an integer number
+        (?:\s+|$)       # optional whitespace
+    )               
+
+    |               
+
+    (                   
+        -?\d*.\d+       # a floating point number
+        (?:\s+|$)       # optional whitespace
+    )               
+
+)                       # end switch on datatypes
+
+Each match of the above expression will be a token. Only one of the
+four capture groups will have content, depending on the token type:
+
+group 1: string
+group 2: quoted string (quotes stripped)
+group 3: integer
+group 4: float
 
 ** Explanation of the messages **
 

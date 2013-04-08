@@ -7,17 +7,12 @@ import eegdevices
 from network import ClientHandler
 
 import logging
-import golem
-import sys
 import socket
-import threading
-import re
 import argparse
 
 from bci_exceptions import *
 
 class Engine:
-
     def __init__(self, port):
         self.classifier = None
         self.recorder = None
@@ -33,7 +28,7 @@ class Engine:
         try:
             self.server_socket.bind( ('', self.port) )
 
-            self.logger.info('Awaiting network connection')
+            self.logger.info('Awaiting network connection on port %d' % self.port)
             self.server_socket.settimeout(1)
             self.server_socket.listen(1)
 
@@ -200,12 +195,9 @@ def main():
 
     print '''
 K.U.Leuven BCI server -- Marijn van Vliet <marijn.vanvliet@med.kuleuven.be>
-Copyright computational neuroscience group, K.U.Leuven (2011)
-
+Copyright computational neuroscience group, K.U.Leuven (2013)
 '''
-
-    
-    parser = argparse.ArgumentParser(description='BCI Tower Defense EEG data recorder and classifier')
+    parser = argparse.ArgumentParser(description='BCI EEG data recorder and classifier')
     parser.add_argument('-p', '--network-port', metavar='N', type=int, default=9000, help='Set the port number on which the recorder will listen to incoming connections from Unity. [9000]')
     parser.add_argument('-l', '--log', metavar='File', help='Specify a file to write any log messages to.')
     parser.add_argument('-v', nargs='?', action=VAction, dest='verbose', help='Be more verbose. Repeat this argument to be even more verbose.')
@@ -236,6 +228,10 @@ Copyright computational neuroscience group, K.U.Leuven (2011)
         logger.setLevel(logging.DEBUG)
 
     logger.addHandler(ch)
+
+    # Check if all devices loaded properly
+    for module, error in eegdevices.device_errors.items():
+        logging.getLogger('EEG-Devices').debug('Device %s unavailable: %s' % (module, error.message))
 
     # Start engine
     e = Engine( int(args.network_port) )

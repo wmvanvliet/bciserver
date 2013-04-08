@@ -1,0 +1,54 @@
+﻿** Software design **
+
+Also see design.pdf for a schematic overview.
+
+The BCIserver consists of four mayor components:
+
+ 1) Recorder
+    Deals with the EEG hardware, synchronization issues and writing data to
+    BDF files.
+
+ 2) Classifier
+    Reads data from the recorder, performs training and application of the
+    classifier pipeline.
+
+ 3) Network client
+    Talks to the network socket.
+
+ 4) Engine
+    The controller component that acts as entrypoint to the program and
+    creates and links the other components.
+
+The network client and engine components are straightforward. The recorder and
+classifier components will be discussed in some more depth.
+
+* Recorder *
+Spawns two threads: one thread performs a continues blocking read on the EEG
+device, buffering and timestamping any data as soon at is becomes available.
+To maintain good sync, this thread is optimized to spend as little time as
+possible outside the blocking read state. The other thread takes the buffered
+data and any markers it is handed through the engine object, and transforms it
+into a golem.DataSet object. The recording object as a whole has three states:
+    1) Idle. Both threads to nothing. EEG device is closed.
+    2) Recording. EEG device is opened, data is streamed and perhaps stored in
+       a BDF file in the background. Data is however immediately discarded.
+    3) Capturing. Data is buffered and made available to the classifier.
+The recorder will usually be in capturing mode, but can be switched into
+recording mode if no classification is necessary (client program is doing
+something non-BCI related, such as loading a new level).
+
+* Classifier *
+Is a separate thread that waits on the recorder object until data is available
+(recorder must be in capturing mode for this), takes the data and feeds it
+into the classification pipeline. This object has four states:
+    1) Idle. Doing nothing.
+    2) Data-collect. Just collecting data into a buffer. Usually the pipeline
+       needs training data, which is captured in this mode.
+    3) Training. All the data collected is fed into the pipeline, which will
+       commence training. Since this can take a while, it has its own state.
+       When the classifier finishes training, it will return to the idle state
+       and send a png image over the network. This image can be used by the
+       client program to show the training data (ERP or SSVEP analysis).
+    4) Application. Data is fed into the pipeline as soon as it becomes
+       available for online classification. Classification results will be
+       send to the engine which will hand it over to the network client.

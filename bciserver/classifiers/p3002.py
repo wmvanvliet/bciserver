@@ -1,22 +1,21 @@
 import golem, psychic
 import numpy
 import scipy
-import cStringIO
-import base64
 
-from ..classifier import Classifier
+from classifier import Classifier
 from ..bci_exceptions import ClassifierException
 
 class P300(Classifier):
-    """ Implements an online P300 classifier. """
-    def __init__(self, engine, recorder, classifications_needed=0, num_repetitions=10, num_options=7, window=(0.0, 1.0), bandpass=[0.5, 15]):
+    """ Implements an online P300 classifier.
+    This class acts as a consumer to a Recorder
+    """
+    def __init__(self, engine, recorder, num_repetitions=10, num_options=7, window=(0.0, 1.0), bandpass=[0.5, 15]):
         """ Constructor.
 
         Required parameters:
-        recorder: The Recorder object to read data from
+        recorder: The imec.Recorder object to read data from
 
         Keyword parameters (configures the classifier): 
-        classifications_needed: Number of consistent classifications needed to make a desicion
         window: A pair (from, to) in samples of the window to extract around the stimulation onset
         bandpass: [lo, hi] cutoff frequencies for the bandpass filter to use on the data
         """
@@ -29,21 +28,24 @@ class P300(Classifier):
         self.window = window
         self.window_samples = (int(recorder.sample_rate*window[0]), int(recorder.sample_rate*window[1]))
         self.target_window = (int(self.target_sample_rate*window[0]), int(self.target_sample_rate*window[1]))
-        self.classifications_needed = classifications_needed
 
         self.mdict = {}
         for i in range(1,self.num_options+1):
             self.mdict[i] = 'target %02d' % i
 
+        # Create pipelines
+        self.preprocessing = golem.nodes.Chain([
+            psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(3, [bandpass[0]/(s/2.0), bandpass[1]/(s/2.0)]) ),
+            psychic.nodes.Resample(self.target_sample_rate, max_marker_delay=1),
+        ])
 
-        # Create pipeline
-        self.bp_node = psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(3, [bandpass[0]/(s/2.0), bandpass[1]/(s/2.0)]) )
-        self.resample_node = psychic.nodes.Resample(self.target_sample_rate, max_marker_delay=1)
-        self.lda_node = golem.nodes.LDA()
-        self.svm_node = golem.nodes.SVM(c=2)
         self.slice_node = psychic.nodes.OnlineSlice(self.mdict, window)
-        self.preprocessing = golem.nodes.Chain([self.bp_node, self.resample_node])
-        self.classification = golem.nodes.Chain([self.svm_node])
+
+        self.classification = golem.nodes.Chain([
+            psychic.nodes.Blowup(100),
+            psychic.nodes.Mean(axis=2),
+            golem.nodes.SVM(),
+        ])
 
         Classifier.__init__(self, engine, recorder)
 
@@ -52,14 +54,24 @@ class P300(Classifier):
         self.logger.info('window: %s' % str(window))
         self.logger.info('num_repetitions: %d' % num_repetitions)
 
+        # Construct feature labels
+        self.channel_labels = recorder.channel_names
+        self.time_labels = (\
+                (numpy.arange(self.target_window[1]-self.target_window[0])
+                  + self.target_window[0]) \
+                / self.target_sample_rate).tolist()
+        self.repetition_labels = range(self.num_repetitions)
+        self.feat_nd_lab = [
+            self.channel_labels,
+            self.time_labels,
+            self.repetition_labels]
+
+        print self.feat_nd_lab
+
     def _reset(self):
         """ Resets the classifier. Flushes all collected data."""
         super(P300, self)._reset()
-
-        self.application_data_valid = True
-        self.processed_data = None
-        self.num_coherent_classifications = 0
-        self.last_winner = -1
+        self.slice_node.reset()
         self.last_repetitions_recorded = 0
 
     def _train(self):
@@ -73,34 +85,30 @@ class P300(Classifier):
         d.save('test_data.dat')
 
         # Do preprocessing
-        self.preprocessing.train(d)
-        d = self.preprocessing.apply(d)
-        self.feat_lab = d.feat_lab
-
+        d = self.preprocessing.train_apply(d,d)
         self.slice_node.train(d)
 
         # Extract trials
         d = self._extract_training_trials(d)
-        d2 = psychic.nodes.Blowup(100).apply(d)
-        d2 = psychic.nodes.Mean(axis=2).apply(d2)
 
         # Train classifier
-        self.classification.train(d2)
-        #if (numpy.any( numpy.isfinite(self.lda_node.means) ) or
-        #    numpy.any( numpy.isfinite(self.lda_node.const) ) or
-        #    numpy.any( numpy.isfinite(self.lda_node.S_is)  )):
-        #    self.logger.error('Training FAILED')
-        #    raise ClassifierException('Training failed')
+        self.classification.train(d)
 
         self.logger.info('Training complete')
 
-        # Send a debug plot to client
+        # Send a debug plot to Unity
         self._send_debug_image( psychic.nodes.Mean(axis=2).apply(d) )
 
         self.training_complete = True
         self.slice_node.reset()
 
     def _extract_training_trials(self, d):
+        ''' 
+        Mangles data into shape: 
+        ndX.shape = (#channels x #samples x #repetitions x #targets)
+        Each instance belongs either to the 'target' or the 'nontarget' class
+        '''
+
         block_onsets = numpy.flatnonzero(d.Y > 100)
         num_blocks = len(block_onsets)
         if not num_blocks:
@@ -141,7 +149,9 @@ class P300(Classifier):
                 Y[1,instance] = (option_num != (target-1)) # nontarget trial
 
         # Build new dataset containing the trials
-        return golem.DataSet(X=X.reshape(-1, num_instances), Y=Y, I=I, feat_shape=feat_shape, feat_dim_lab=feat_dim_lab,cl_lab=['target', 'nontarget'])
+        return golem.DataSet(X=X.reshape(-1, num_instances), Y=Y, I=I,
+                feat_shape=feat_shape, feat_dim_lab=feat_dim_lab,
+                feat_nd_lab=self.feat_nd_lab, cl_lab=['target', 'nontarget'])
 
     def _apply(self, d):
         """ Applies classifier to a dataset. """
@@ -152,68 +162,59 @@ class P300(Classifier):
         if slices == None:
             return
 
-        if self.application_data == None or not self.application_data_valid:
+        if self.application_data == None:
             self.application_data = slices
-            self.application_data_valid = True
         else:
             self.application_data += slices
 
         repetitions_recorded = numpy.min(self.application_data.ninstances_per_class)
+        self.logger.info('Repetitions recorded: %d' % repetitions_recorded)
         if repetitions_recorded == self.last_repetitions_recorded:
             return
 
-        self.logger.debug('Repetitions recorded: %d' % repetitions_recorded)
         self.last_repetitions_recorded = repetitions_recorded
         if repetitions_recorded < self.num_repetitions:
             return
 
-        d = psychic.erp(self.application_data)
+        # Mangle data into shape: (#channels x #samples x #repetitions x #targets)
+        d = self.application_data
+        ndX = numpy.zeros(d.feat_shape + (repetitions_recorded, d.nclasses,))
+        Y = numpy.zeros((2,d.nclasses), dtype=numpy.bool)
+        I = numpy.arange(d.nclasses)
+        feat_dim_lab = ['channels', 'samples', 'repetitions']
+
+        for cl in range(d.nclasses):
+            ndX[:,:,:,cl] = d.get_class(cl).ndX[:,:,:repetitions_recorded]
+
+        # Update feature labels
+        feat_nd_lab = list(self.feat_nd_lab)
+        feat_nd_lab[2] = range(repetitions_recorded)
+
+        d = golem.DataSet(ndX=ndX, Y=Y, I=I, feat_dim_lab=feat_dim_lab,
+                feat_nd_lab=feat_nd_lab, cl_lab=['target', 'nontarget'],
+                default=d)
 
         # Perform actual classification
         try:
             result = self.classification.apply(d).X
-
-            candidates = numpy.flatnonzero( numpy.argmax(result, axis=0) == 0 )
-            if len(candidates) > 0:
-                winner = candidates[ numpy.argmax( result[0, candidates] ) ]
-            else:
-                winner = numpy.argmax(result[0,:])
-
-            if winner == self.last_winner:
-                self.num_coherent_classifications += 1
-            else:
-                self.num_coherent_classifications = 0
-                self.last_winner = winner
-
-            self.logger.debug('Coherent classifications: %d' % self.num_coherent_classifications)
-            if self.num_coherent_classifications < self.classifications_needed:
-                self.engine.provide_result([list(result[0,:]), 0])
-                return
+            winner = numpy.argmax(result[0,:])
 
             self.logger.info('classification result: %d' % winner)
             self.engine.provide_result([list(result[0,:]), winner+1])
-            self.application_data_valid = False
-            self.num_coherent_classifications = 0
-            self.last_winner = -1
+            self.application_data = None
             self.last_repetitions_recorded = 0
+            self.repetitions_recorded = 0
 
         except ValueError as e:
             self.logger.error('Classification failed: %s' % e)
     
 
-    def _send_debug_image(self, d):
-        """ Send a PNG image describing the training data to client. """
+    def _generate_debug_image(self, d):
+        """ Generate image describing the training data. """
 
-        self.logger.info('Sending debug plot to client')
         fig = psychic.plot_erp(d)
         fig.set_size_inches(7,11)
-
-        # Save a snapshot to disk
-        fig.savefig('classifier_output.png', format='png')
-
-        buf = cStringIO.StringIO()
-        fig.savefig(buf, format='png')
-        self.engine.provide_result( ['training-result', base64.b64encode(buf.getvalue())] )
+        return fig
 
     def set_parameter(self, name, value):
         if name == 'num_repetitions':
@@ -221,13 +222,6 @@ class P300(Classifier):
                 raise ClassifierException('Value for num_repetitions must be of type int.')
 
             self.num_repetitions = value[0]
-            return True
-
-        elif name == 'classifications_needed':
-            if type(value[0]) != int:
-                raise ClassifierException('Value for classifications_needed must be of type int.')
-
-            self.classifications_needed = value[0]
             return True
 
         elif name == 'num_options':
@@ -241,7 +235,7 @@ class P300(Classifier):
             for i in range(1,self.num_options+1):
                 self.mdict[i] = 'target %02d' % i
             self.slice_node.reset()
-            self.application_data_valid = False
+            self.application_data = None
             return True
 
         if self.state != 'idle' or self.training_complete:
@@ -284,7 +278,5 @@ class P300(Classifier):
             return self.target_sample_rate
         elif name == 'bandpass':
             return self.bandpass
-        elif name == 'classifications_needed':
-            return self.classifications_needed
         else:
             return False
