@@ -384,6 +384,11 @@ Selects the channels to record from either by integer index or name (see also th
 "channel_names" parameter). Data from channels that are not selected is
 discarded. Defaults to recording from all available channels.
 
+"nchannels" <int> [read only]
+Number of channels the device has. 
+
+"samplerate" <float> [read only]
+Samplerate of the device.
 
 * The Emulator ("emulator") *
 
