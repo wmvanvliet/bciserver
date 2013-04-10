@@ -153,8 +153,8 @@ class ClientHandler:
                 else:
                     self.sendLine('ERROR 001 "Unknown command category.')
             except Exception as e:
-                self.sendLine('ERROR %03d "%s"' % (e.code, e.msg))
-                self.logger.error('ERROR %03d "%s"\n%s' % (e.code, e.msg, traceback.format_exc()))
+                self.sendLine('ERROR 000 "%s"' %  e)
+                self.logger.error('ERROR 000 "%s"\n%s' % (e, traceback.format_exc()))
             except:
                 self.sendLine('ERROR 000 "%s"' % sys.exc_info()[1])
                 self.logger.error('ERROR 000 "%s"' % traceback.format_exc())

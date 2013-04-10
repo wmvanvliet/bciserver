@@ -75,7 +75,7 @@ class ERPPlotter(Classifier):
     def _generate_debug_image(self, d):
         """ Generate image describing the training data. """
         d = golem.DataSet(cl_lab=self.cl_lab, default=d)
-        fig = psychic.plot_erp(d, self.target_sample_rate, enforce_equal_n=False)
+        fig = psychic.plot_erp(d, self.recorder.sample_rate, enforce_equal_n=False)
         fig.set_size_inches(7,11)
         return fig
 
@@ -95,8 +95,6 @@ class ERPPlotter(Classifier):
                 raise ClassifierException('This parameter needs two numeric value.')
 
             self.window = (value[0], value[1])
-            self.window_samples = (int(self.recorder.sample_rate*value[0]), int(self.recorder.sample_rate*value[1]))
-            self.target_window = (int(self.target_sample_rate*value[0]), int(self.target_sample_rate*value[1]))
             return True
 
         elif name == 'cl_lab':
