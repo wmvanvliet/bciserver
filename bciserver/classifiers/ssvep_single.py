@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 
 import golem, psychic
-import numpy
+import numpy as np
 import scipy
 
 from classifier import Classifier
@@ -34,7 +34,9 @@ class SSVEPSingle(Classifier):
         self.freq = freq
         self.bandpass = bandpass
         self.pipeline = None
-        self.target_sample_rate = 128
+
+        # Figure out a sane target sample rate, using only a decimation factor
+        self.target_sample_rate = np.floor(recorder.sample_rate / np.max([1, np.floor(recorder.sample_rate / 200)]))
     
         Classifier.__init__(self, engine, recorder)
 
@@ -77,7 +79,7 @@ class SSVEPSingle(Classifier):
         d.save('test_data.dat')
 
         # Convert markers to classes
-        Y = numpy.zeros((3, d.ninstances), dtype=numpy.bool)
+        Y = np.zeros((3, d.ninstances), dtype=np.bool)
 
         Y[0,:] = (d.Y == 1)[0,:]
         Y[1,:] = (d.Y == 2)[0,:]
@@ -138,7 +140,7 @@ class SSVEPSingle(Classifier):
         ax = fig.add_subplot(311)
         ax.plot(d.I[0,:], d.X[0,:])
         ax.set_ylabel('mV')
-        ax.set_xlim([numpy.min(d.I), numpy.max(d.I)])
+        ax.set_xlim([np.min(d.I), np.max(d.I)])
         ax.grid()
 
         ax = fig.add_subplot(312)
@@ -146,7 +148,7 @@ class SSVEPSingle(Classifier):
         ax.axhline(self.thres_node.hi, color='r')
         ax.axhline(self.thres_node.lo, color='g')
         ax.set_ylabel('mean(correlation)')
-        ax.set_xlim([numpy.min(d2.I), numpy.max(d2.I)])
+        ax.set_xlim([np.min(d2.I), np.max(d2.I)])
         ax.grid()
 
         ax = fig.add_subplot(313)
@@ -154,7 +156,7 @@ class SSVEPSingle(Classifier):
         ax.plot(d2.I[0,:], d2.Y[0,:], '-b')
         ax.set_ylabel('fixating?')
         ax.set_xlabel('time (s)')
-        ax.set_xlim([numpy.min(d2.I), numpy.max(d2.I)])
+        ax.set_xlim([np.min(d2.I), np.max(d2.I)])
         ax.set_ylim([-0.2, 2])
         ax.grid()
 
