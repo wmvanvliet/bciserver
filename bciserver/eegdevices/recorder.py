@@ -439,6 +439,8 @@ class Recorder(threading.Thread):
             return self.timing_mode
         elif name == 'buffer_size_seconds':
             return self.buffer_size_seconds
+        elif name =='nchannels':
+            return self.nchannels
         elif name =='channel_names':
             return self.feat_lab
         elif name == 'target_channels':

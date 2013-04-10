@@ -1,6 +1,7 @@
 ﻿import socket
 import logging
 import re
+import sys, traceback
 from collections import deque
 
 from bci_exceptions import *
@@ -79,8 +80,9 @@ class ClientHandler:
                 self.buffer = lines[-1]
             except socket.timeout:
                 pass
-            except Exception as e:
-                print 'exception caught, trying to close down network connection'
+            except:
+                print 'exception caught , trying to close down network connection'
+                traceback.print_exc() 
                 self.stop()
                 self.socket.close()
                 raise
@@ -150,22 +152,12 @@ class ClientHandler:
                     self._parse_marker()
                 else:
                     self.sendLine('ERROR 001 "Unknown command category.')
-            except EngineException as e:
-                self.sendLine('ERROR %03d "%s"' % (e.code, e.msg))
-                self.logger.error('ERROR %03d "%s"' % (e.code, e.msg))
-            except BCIProtocolException as e:
-                self.sendLine('ERROR %03d "%s"' % (e.code, e.msg))
-                self.logger.error('ERROR %03d "%s"' % (e.code, e.msg))
-            except ClassifierException as e:
-                self.sendLine('ERROR 000 "%s"' % e)
-                self.logger.error('ERROR 000 "%s"' % e)
-            except DeviceError as e:
-                self.sendLine('ERROR 000 "%s"' % e)
-                self.logger.error('ERROR 000 "%s"' % e)
-                raise
             except Exception as e:
-                self.sendLine('ERROR 000 "%s"' % e)
-                self.logger.error('ERROR 000 "%s"' % e)
+                self.sendLine('ERROR %03d "%s"' % (e.code, e.msg))
+                self.logger.error('ERROR %03d "%s"\n%s' % (e.code, e.msg, traceback.format_exc()))
+            except:
+                self.sendLine('ERROR 000 "%s"' % sys.exc_info()[1])
+                self.logger.error('ERROR 000 "%s"' % traceback.format_exc())
                 raise
 
         self.tokens.clear()

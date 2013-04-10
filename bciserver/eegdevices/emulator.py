@@ -1,6 +1,7 @@
 import logging
 import numpy
 import golem
+import psychic
 import time
 from . import Recorder, precision_timer, DeviceError
 
@@ -58,6 +59,7 @@ class Emulator(Recorder):
         self.feat_lab = list(self.channel_names)
 
         self.bdf_playback_file = bdf_playback_file
+        self.file_input = False
 
         # Configure logging
         self.logger = logging.getLogger('Emulator')
@@ -77,7 +79,7 @@ class Emulator(Recorder):
     def _open(self):
         # Open supplied BDF file for playback
         if self.bdf_playback_file != None:
-            self.bdf_reader = psychic.BaseBDFReader(open(bdf_playback_file, 'rb'))
+            self.bdf_reader = psychic.BaseBDFReader(open(self.bdf_playback_file, 'rb'))
             self.header = h = self.bdf_reader.read_header()
             self.nchannels = h['n_channels']-1 # one status channel
             #self.buffer_size_seconds = h['record_length']
@@ -232,7 +234,5 @@ class Emulator(Recorder):
             return self.bdf_playback_file
         elif name == 'sample_rate':
             return self.sample_rate
-        elif name == 'nchannels':
-            return self.nchannels
         else:
             return False
