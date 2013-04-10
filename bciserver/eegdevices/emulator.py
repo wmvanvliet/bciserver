@@ -232,7 +232,5 @@ class Emulator(Recorder):
 
         if name == 'bdf_playback_file':
             return self.bdf_playback_file
-        elif name == 'sample_rate':
-            return self.sample_rate
         else:
             return False

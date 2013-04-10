@@ -443,7 +443,7 @@ class Recorder(threading.Thread):
             return self.nchannels
         elif name =='channel_names':
             return self.feat_lab
+        elif name =='sample_rate':
+            return self.sample_rate
         elif name == 'target_channels':
             return self.target_channels
-        else:
-            return False
