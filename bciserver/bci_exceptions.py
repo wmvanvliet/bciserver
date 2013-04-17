@@ -12,7 +12,7 @@ class BCIProtocolException(Exception):
         self.msg = msg
 
     def __str__(self):
-        return '%d: %s' (self.code, self.msg)
+        return '%d: %s' % (self.code, self.msg)
 
 class ClassifierException(Exception):
     pass
