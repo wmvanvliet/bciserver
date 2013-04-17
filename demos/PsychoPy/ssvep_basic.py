@@ -66,7 +66,7 @@ wait_for_message(net_file, 'MODE PROVIDE "application"')
 stimuli = []
 for color,pos in zip(stimulus_colors, stimulus_pos):
     stimulus = visual.Rect(window, stimulus_width, stimulus_height,
-                           pos=pos, lineWidth=0, fillColor=color)
+                           pos=pos, fillColor=color)
     stimuli.append(stimulus)
 
 # Create a clock
