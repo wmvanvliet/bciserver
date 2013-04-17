@@ -236,6 +236,10 @@ function mazeClient()
     end
     
     pnet(con, 'printf', 'DEVICE PARAM SET target_channels %s\r\n', eegTargetChannelListString);
+    
+    if strcmp(eegDeviceName, 'biosemi')
+        pnet(con, 'printf', 'DEVICE PARAM SET reference_channels 32 33\r\n');
+    end
     pnet(con, 'printf', 'CLASSIFIER SET ssvep\r\n');
     pnet(con, 'printf', 'CLASSIFIER PARAM SET cl_type %s\r\n', classifier);
     pnet(con, 'printf', 'CLASSIFIER PARAM SET window_size %f\r\n', ssvepWindowSize);
@@ -661,19 +665,12 @@ function mazeClient()
             if commandArrived,
                 queuePositionShift = 0;
 
-                %pnet(con, 'readline');
-                %newCommandChar = '1';
-                %while true,
-                    tokens = tokenize_message(con);
-                    classification_results = cell2mat(tokens(3:end));
-                    [~, newCommand] = max(classification_results);
-                    newCommandChar = num2str(newCommand);
-                 %   if isempty( newCommandChar ),
-                 %       break
-                 %   end
-                    commandChar = newCommandChar;
-                %end
-                
+                tokens = tokenize_message(con);
+                classification_results = cell2mat(tokens(3:end));
+                [~, newCommand] = max(classification_results);
+                newCommandChar = num2str(newCommand);
+                commandChar = newCommandChar;
+                                
                 if keyIsDown,
                     if keyCode(leftKey)
                         commandChar = commandGoLeftChar;
@@ -1437,7 +1434,8 @@ function tokens = tokenize_message(con)
                        '"(?<quoted>(:?\\.|[^"\\])*)"(?:\s+|$)|', ... % Quoted string allowing whatever between quotes (allow for escaping of quotes)
                        '(?<int>-?\d+)(?:\s+|$)|', ...                % Integer value, starts with optional '-', then only digits
                        '(?<float>-?\d*.\d+)(?:\s+|$)'];              % Floating point value, starts with optional '-', optional digits, '.' and then only digits
-    matches = regexp(pnet(con, 'readline'), protocol_regexp, 'names');
+    message = strtrim(pnet(con, 'readline'));
+    matches = regexp(message, protocol_regexp, 'names');
     tokens = cell(1, length(matches));
 
     % Loop over each match and determine data type
