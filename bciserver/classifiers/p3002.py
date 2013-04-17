@@ -42,7 +42,7 @@ class P300(Classifier):
         self.slice_node = psychic.nodes.OnlineSlice(self.mdict, window)
 
         self.classification = golem.nodes.Chain([
-            psychic.nodes.Blowup(100),
+            #psychic.nodes.Blowup(100),
             psychic.nodes.Mean(axis=2),
             golem.nodes.SVM(),
         ])
@@ -59,14 +59,12 @@ class P300(Classifier):
         self.time_labels = (\
                 (numpy.arange(self.target_window[1]-self.target_window[0])
                   + self.target_window[0]) \
-                / self.target_sample_rate).tolist()
+                / float(self.target_sample_rate)).tolist()
         self.repetition_labels = range(self.num_repetitions)
         self.feat_nd_lab = [
-            self.channel_labels,
+            [self.channel_labels[i] for i in self.recorder.target_channels],
             self.time_labels,
             self.repetition_labels]
-
-        print self.feat_nd_lab
 
     def _reset(self):
         """ Resets the classifier. Flushes all collected data."""

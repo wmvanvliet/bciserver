@@ -1,5 +1,4 @@
 import matplotlib
-#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import golem, psychic
@@ -10,10 +9,10 @@ from classifier import Classifier
 from ..bci_exceptions import ClassifierException
 
 class ERPPlotter(Classifier):
-    """ Implements an online P300 classifier.
+    """ Implements a classifier that just plots the ERP.
     This class acts as a consumer to a Recorder
     """
-    def __init__(self, engine, recorder, window=(0.0, 1.0), bandpass=[0.5, 15]):
+    def __init__(self, engine, recorder, window=(0, 1.0), bandpass=[0.5, 15]):
         """ Constructor.
 
         Required parameters:
@@ -25,16 +24,11 @@ class ERPPlotter(Classifier):
         """
         assert len(window) == 2
 
-        self.target_sample_rate = 128
-        self.window = window
-        self.window_samples = (int(recorder.sample_rate*window[0]), int(recorder.sample_rate*window[1]))
-        self.target_window = (int(self.target_sample_rate*window[0]), int(self.target_sample_rate*window[1]))
-
         # Create pipeline
         self.bp_node = psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(3, [bandpass[0]/(s/2.0), bandpass[1]/(s/2.0)]) )
-        self.resample_node = psychic.nodes.Resample(self.target_sample_rate, max_marker_delay=1)
-        self.preprocessing = golem.nodes.Chain([self.bp_node, self.resample_node])
+        self.preprocessing = golem.nodes.Chain([self.bp_node])
 
+        self.window = window
         self.cl_lab = None
         self.format = 'png'
 
@@ -42,7 +36,6 @@ class ERPPlotter(Classifier):
 
         self.logger.info('sample_rate: %d Hz' % recorder.sample_rate)
         self.logger.info('bandpass: %s' % bandpass)
-        self.logger.info('window: %s' % str(window))
 
     def _train(self):
         """ Trains on the data collected thus far. """
@@ -81,7 +74,8 @@ class ERPPlotter(Classifier):
     
     def _generate_debug_image(self, d):
         """ Generate image describing the training data. """
-        fig = psychic.plot_erp(d, self.target_sample_rate, enforce_equal_n=False)
+        d = golem.DataSet(cl_lab=self.cl_lab, default=d)
+        fig = psychic.plot_erp(d, self.recorder.sample_rate, enforce_equal_n=False)
         fig.set_size_inches(7,11)
         return fig
 
@@ -101,20 +95,11 @@ class ERPPlotter(Classifier):
                 raise ClassifierException('This parameter needs two numeric value.')
 
             self.window = (value[0], value[1])
-            self.window_samples = (int(self.recorder.sample_rate*value[0]), int(self.recorder.sample_rate*value[1]))
-            self.target_window = (int(self.target_sample_rate*value[0]), int(self.target_sample_rate*value[1]))
-            return True
-
-        elif name == 'target_sample_rate':
-            if type(value[0]) != int and type(value[0]) != float:
-                raise ClassifierException('Value for num_options must be numeric.')
-
-            self.target_sample_rate = value[0]
-            self.target_window = (int(self.target_sample_rate*self.window[0]), int(self.target_sample_rate*self.window[1]))
             return True
 
         elif name == 'cl_lab':
             self.cl_lab = value
+            return True
 
         elif name == 'format':
             if len(value) < 1:
@@ -124,14 +109,13 @@ class ERPPlotter(Classifier):
                 raise ClassifierException('Invalid value for format.')
 
             self.format = value[0]
+            return True
 
         return False
 
     def get_parameter(self, name):
         if name == 'window':
             return self.window
-        elif name == 'target_sample_rate':
-            return self.target_sample_rate
         elif name == 'bandpass':
             return self.bandpass
         elif name == 'cl_lab':

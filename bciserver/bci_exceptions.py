@@ -16,4 +16,3 @@ class BCIProtocolException(Exception):
 
 class ClassifierException(Exception):
     pass
-
