@@ -1,4 +1,3 @@
-import time, os, ctypes
 import math
 import socket
 import select
@@ -39,7 +38,8 @@ stimulus_pos = [(-1+stimulus_width/2, 1-stimulus_height/2),
                 (1-stimulus_width/2, -1+stimulus_height/2)]
 
 # Open main window
-window = visual.Window(screen_size, color=(-1,-1,-1), winType='pyglet', waitBlanking=True, fullscr=False)
+monitor = visual.monitors.getAllMonitors()[0]
+window = visual.Window(screen_size, screen=1, monitor=monitor, color=(-1,-1,-1), winType='pyglet', waitBlanking=True, fullscr=False)
 
 # Connect to server
 net = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
