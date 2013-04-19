@@ -4,6 +4,8 @@ import select
 import numpy as np
 from psychopy import core, visual, event
 
+training = True
+
 # Below are two functions that are useful. Below that is the main script
 def wait_for_message(net_file, message, ignore_others=False):
     '''
@@ -37,6 +39,17 @@ stimulus_pos = [(-1+stimulus_width/2, 1-stimulus_height/2),
                 (-1+stimulus_width/2, -1+stimulus_height/2),
                 (1-stimulus_width/2, -1+stimulus_height/2)]
 
+# Create training sequence
+training_sequence = np.array([[0, 00.0], # Stimulus 0 at t=0
+                              [1, 10.0], # Stimulus 1 at t=10
+                              [2, 20.0],
+                              [3, 30.0],
+                              [0, 40.0],
+                              [1, 50.0],
+                              [2, 60.0],
+                              [3, 70.0]])
+training_length = 80
+
 # Open main window
 monitor = visual.monitors.getAllMonitors()[0]
 window = visual.Window(screen_size, screen=1, monitor=monitor, color=(-1,-1,-1), winType='pyglet', waitBlanking=True, fullscr=False)
@@ -56,11 +69,15 @@ net.send('CLASSIFIER SET ssvep\r\n')
 net.send('DEVICE OPEN\r\n')
 wait_for_message(net_file, 'MODE PROVIDE "idle"')
 
-net.send('MODE SET "training"\r\n')
-wait_for_message(net_file, 'MODE PROVIDE "training"')
-wait_for_message(net_file, 'MODE PROVIDE "idle"')
-net.send('MODE SET "application"\r\n')
-wait_for_message(net_file, 'MODE PROVIDE "application"')
+if training:
+    net.send('MODE SET "data-collect"\r\n')
+    wait_for_message(net_file, 'MODE PROVIDE "data-collect"')
+else :
+    net.send('MODE SET "training"\r\n')
+    wait_for_message(net_file, 'MODE PROVIDE "training"')
+    wait_for_message(net_file, 'MODE PROVIDE "idle"')
+    net.send('MODE SET "application"\r\n')
+    wait_for_message(net_file, 'MODE PROVIDE "application"')
         
 # Create stimuli
 stimuli = []
@@ -74,17 +91,40 @@ clock = core.Clock()
 T0 = clock.getTime()
 
 running = True
+selected_stimulus = -1
+prev_selected_stimulus = -1
+
 while running:
-    if data_available(net):
+
+    # Determine which stimulus is currently selected
+    if training:
+        # Do training sequence
+        dt = clock.getTime() - T0
+        i = np.searchsorted(training_sequence[:,1], dt, 'left')
+        selected_stimulus = int(training_sequence[max(0, i-1),0])
+
+        if selected_stimulus != prev_selected_stimulus:
+            net.send('MARKER switch %d\r\n' % (selected_stimulus+1))
+            prev_selected_stimulus = selected_stimulus
+
+        if dt > training_length:
+            running = False
+
+    elif data_available(net):
+        # Read current selected stimulus from server
         result = np.array(net.recv(1024).strip().split(' ')[2:]).astype(np.float)
-        for stimulus, color in zip(stimuli, stimulus_colors):
-            stimulus.setFillColor(color)
-        stimuli[np.argmax(result)].setFillColor(stimulus_selected_color)
+        selected_stimulus = np.argmax(result)
 
+    # Set the color for each stimulus
+    for stimulus, color in zip(stimuli, stimulus_colors):
+        stimulus.setFillColor(color)
+
+    if selected_stimulus != -1:
+        stimuli[selected_stimulus].setFillColor(stimulus_selected_color)
+
+    # Calculate alpha value for each stimulus
     now = clock.getTime() - T0
-
     for stimulus, freq, pos in zip(stimuli, stimulus_freqs, stimulus_pos):
-        # Calculate alpha value
         stimulus.setOpacity(0.5 + math.cos(2*math.pi*freq*now)/2)
         stimulus.draw(window)
 
