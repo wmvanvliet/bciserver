@@ -2,9 +2,15 @@ import math
 import socket
 import select
 import numpy as np
+import argparse
 from psychopy import core, visual, event
 
-training = True
+parser = argparse.ArgumentParser(description='Basic SSVEP demo')
+parser.add_argument('-p', '--port', metavar='N', type=int, default=9000, help='Set the port number on which the server is listening. [9000]')
+parser.add_argument('-d', '--device', metavar='emulator/biosemi/epoc', default='emulator', help='Recording device to select [emulator]')
+parser.add_argument('-b', '--bdf-file', metavar='File', default='basic_ssvep.bdf', help='BDF file to write data to [basic_ssvep.bdf]')
+parser.add_argument('-t', '--training', action='store_true', default=False, help='Switch to training mode [not set]')
+args = parser.parse_args()
 
 # Below are two functions that are useful. Below that is the main script
 def wait_for_message(net_file, message, ignore_others=False):
@@ -56,20 +62,34 @@ window = visual.Window(screen_size, screen=1, monitor=monitor, color=(-1,-1,-1),
 
 # Connect to server
 net = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-net.connect(('127.0.0.1', 9000))
+net.connect(('127.0.0.1', args.port))
 net_file = net.makefile()
 
 net.sendall('PING\r\n')
 wait_for_message(net_file, 'PONG')
 
 # Configure server
-net.send('DEVICE SET emulator\r\n')
-net.send('DEVICE PARAM SET bdf_file "test.bdf"\r\n')
+if args.device == 'biosemi':
+    net.send('DEVICE SET biosemi\r\n')
+    net.send('DEVICE PARAM SET target_channels Oz O1 O2 Pz PO3 PO4\r\n')
+    net.send('DEVICE PARAM SET reference_channels 33 34\r\n')
+    net.send('DEVICE PARAM SET status_as_markers 1\r\n')
+    net.send('DEVICE PARAM SET port LPT1\r\n')
+if args.device == 'epoc':
+    net.send('DEVICE SET epoc\r\n')
+    net.send('DEVICE PARAM SET target_channels AF3 AF4 F3 F4 FC5 FC6\r\n')
+else:
+    net.send('DEVICE SET emulator\r\n')
+    net.send('DEVICE PARAM SET nchannels 6\r\n')
+    net.send('DEVICE PARAM SET sample_rate 2048\r\n')
+
+net.send('DEVICE PARAM SET bdf_file "%s"\r\n' % args.bdf_file)
+
 net.send('CLASSIFIER SET ssvep\r\n')
 net.send('DEVICE OPEN\r\n')
 wait_for_message(net_file, 'MODE PROVIDE "idle"')
 
-if training:
+if args.training:
     net.send('MODE SET "data-collect"\r\n')
     wait_for_message(net_file, 'MODE PROVIDE "data-collect"')
 else :
@@ -97,7 +117,7 @@ prev_selected_stimulus = -1
 while running:
 
     # Determine which stimulus is currently selected
-    if training:
+    if args.training:
         # Do training sequence
         dt = clock.getTime() - T0
         i = np.searchsorted(training_sequence[:,1], dt, 'left')
