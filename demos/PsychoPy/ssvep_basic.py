@@ -72,10 +72,10 @@ wait_for_message(net_file, 'PONG')
 if args.device == 'biosemi':
     net.send('DEVICE SET biosemi\r\n')
     net.send('DEVICE PARAM SET target_channels Oz O1 O2 Pz PO3 PO4\r\n')
-    net.send('DEVICE PARAM SET reference_channels 33 34\r\n')
+    net.send('DEVICE PARAM SET reference_channels 32 33\r\n')
     net.send('DEVICE PARAM SET status_as_markers 1\r\n')
     net.send('DEVICE PARAM SET port LPT1\r\n')
-if args.device == 'epoc':
+elif args.device == 'epoc':
     net.send('DEVICE SET epoc\r\n')
     net.send('DEVICE PARAM SET target_channels AF3 AF4 F3 F4 FC5 FC6\r\n')
 else:
