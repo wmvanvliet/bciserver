@@ -58,7 +58,7 @@ training_length = 80
 
 # Open main window
 monitor = visual.monitors.getAllMonitors()[0]
-window = visual.Window(screen_size, screen=1, monitor=monitor, color=(-1,-1,-1), winType='pyglet', waitBlanking=True, fullscr=False)
+window = visual.Window(screen_size, screen=1, monitor=monitor, color=(-1,-1,-1), winType='pyglet', waitBlanking=True, fullscr=True)
 
 # Connect to server
 net = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -128,6 +128,9 @@ while running:
             prev_selected_stimulus = selected_stimulus
 
         if dt > training_length:
+            net.send('MODE SET "training"\r\n')
+            wait_for_message(net_file, 'MODE PROVIDE "training"')
+            wait_for_message(net_file, 'MODE PROVIDE "idle"')
             running = False
 
     elif data_available(net):
