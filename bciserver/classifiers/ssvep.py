@@ -85,6 +85,10 @@ class SSVEP(Classifier):
         """ Construct and initialize pipeline, which can take some time. """
         self._construct_pipeline()
 
+        d = self.recorder.read(block=False)
+        if d:
+            d.save('test_data.dat')
+
         self.logger.info('Training complete')
         self.training_complete = True
 
@@ -92,6 +96,12 @@ class SSVEP(Classifier):
         """ Apply the classifier on a dataset. """
         if d.ninstances == 0:
             return
+        d = self.recorder.read(block=False)
+        if not d:
+            raise ClassifierException('First collect some data before training.')
+
+        # Save a snapshot of the training data to disk
+        d.save('test_data.dat')
 
         try:
             result = self.pipeline.apply(d)
