@@ -131,7 +131,8 @@ class Classifier(threading.Thread):
 
                 # Train on the recorded data
                 try:
-                    self._train()
+                    d = self.recorder.read(block=False)
+                    self._train(d)
                 except Exception as e:
                     self.logger.error(e)
                     self.engine.error(e)
