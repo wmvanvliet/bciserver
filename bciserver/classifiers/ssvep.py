@@ -102,7 +102,7 @@ class SSVEP(Classifier):
             # send result to client
             if self.engine != None:
                 for i in range(0, result.ninstances):
-                    self.engine.provide_result(result.X.ravel().tolist())
+                    self.engine.provide_result(result.X[:,i].ravel().tolist())
         except Exception as e:
             self.logger.warning('%s' % e.message)
             traceback.print_exc()
