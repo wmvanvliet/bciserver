@@ -71,13 +71,13 @@ wait_for_message(net_file, 'PONG')
 # Configure server
 if args.device == 'biosemi':
     net.send('DEVICE SET biosemi\r\n')
-    net.send('DEVICE PARAM SET target_channels Oz O1 O2 Pz PO3 PO4\r\n')
-    net.send('DEVICE PARAM SET reference_channels 32 33\r\n')
+    #net.send('DEVICE PARAM SET target_channels Oz O1 O2 Pz PO3 PO4\r\n')
+    net.send('DEVICE PARAM SET reference_channels EXG1 EXG2\r\n')
     net.send('DEVICE PARAM SET status_as_markers 1\r\n')
     net.send('DEVICE PARAM SET port LPT1\r\n')
 elif args.device == 'epoc':
     net.send('DEVICE SET epoc\r\n')
-    net.send('DEVICE PARAM SET target_channels AF3 AF4 F3 F4 FC5 FC6\r\n')
+    #net.send('DEVICE PARAM SET target_channels AF3 AF4 F3 F4 FC5 FC6\r\n')
 else:
     net.send('DEVICE SET emulator\r\n')
     net.send('DEVICE PARAM SET nchannels 6\r\n')
@@ -135,7 +135,9 @@ while running:
 
     elif data_available(net):
         # Read current selected stimulus from server
-        result = np.array(net.recv(1024).strip().split(' ')[2:]).astype(np.float)
+        message = net.recv(1024).strip().split('\r\n')[-1]
+        result = np.array(message.strip().split(' ')[2:])
+        result = result.astype(np.float)
         selected_stimulus = np.argmax(result)
 
     # Set the color for each stimulus
