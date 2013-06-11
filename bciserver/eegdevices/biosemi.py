@@ -49,7 +49,7 @@ class BIOSEMI(Recorder):
         """
 
         self.sample_rate = 2048
-        self.nchannels = 40 
+        self.nchannels = 40
         self.calibration_time = 0 # Signal does not need to stabilize
         self.physical_min = -262144 
         self.physical_max = 262144
@@ -58,8 +58,6 @@ class BIOSEMI(Recorder):
         self.gain = (self.physical_max-self.physical_min) / float(self.digital_max-self.digital_min)
         self.buffer_size_bytes = int(280 * 4 * (buffer_size_seconds+1) * self.sample_rate)
         self.status_as_markers = status_as_markers
-        self.reference_channels = reference_channels
-        self.nreference_channels = len(self.reference_channels)
 
         self.logger = logging.getLogger('BIOSEMI Recorder')
 
@@ -70,6 +68,21 @@ class BIOSEMI(Recorder):
             'FC6', 'FC2', 'F4', 'F8', 'AF4', 'Fp2', 'Fz', 'Cz',
             'EXG1', 'EXG2', 'EXG3', 'EXG4', 'EXG5', 'EXG6', 'EXG7', 'EXG8'
         ]
+
+        print self.channel_names
+
+        self.reference_channels = []
+        for ch in reference_channels:
+            print ch
+            if type(ch) == str:
+                self.reference_channels.append(self.channel_names.index(ch))
+            elif type(ch) == int:
+                self.reference_channels.append(ch)
+            else:
+                raise DeviceError('Use string or integers to indicate reference channels')
+
+        self.nreference_channels = len(self.reference_channels)
+
 
         self.feat_lab = list(self.channel_names)
         
@@ -133,6 +146,8 @@ class BIOSEMI(Recorder):
         diff = now - self.end_read_time
         self.end_read_time = now
 
+        # Limit data to first 32 channels + external ones
+        d = d[range(32) + range(256, 264), :]
         d = self._to_dataset(d)
         if d != None:
             self.nsamples += d.ninstances
@@ -166,6 +181,7 @@ class BIOSEMI(Recorder):
             Y = numpy.zeros((1, data.shape[1]))
 
         X = data[1:,:] + (2**23) # go from signed to unsigned
+        print self.reference_channels
 
         if len(self.reference_channels) > 0:
             REF = X[self.reference_channels,:]
