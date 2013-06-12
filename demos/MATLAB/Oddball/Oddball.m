@@ -96,7 +96,7 @@ if nargin < 3
 end
 
 % EEG channels to record from.
-if strcmp(device, 'emotiv-epoc')
+if strcmp(device, 'epoc')
     targetChannels = 'AF3 AF4 F3 F4';
 elseif strcmp(device, 'biosemi')
     targetChannels = 'Fz FC1 FC2 Cz CP1 CP2 Pz';
@@ -108,7 +108,7 @@ else
     targetChannels = 'Fz Cz Pz C3 C4';
 end
 % Time (in seconds) a stimulus is displayed on the screen
-stimulus_duration = 0.2;
+stimulus_duration = 0.1;
 
 % Time (in seconds) of an entire trial
 trial_duration = 0.3;
@@ -136,12 +136,10 @@ pnet(con, 'printf', 'DEVICE SET %s\r\n', device);
 pnet(con, 'printf', 'DEVICE PARAM SET bdf_file %s.bdf\r\n', subject);
 
 % Set the target channels
-if ~strcmp(device, 'emulator')
-    pnet(con, 'printf', 'DEVICE PARAM SET target_channels %s\r\n', targetChannels); 
-end
 
 % For the BIOSEMI, set reference channels and parallel port
 if strcmp(device, 'biosemi')
+    pnet(con, 'printf', 'DEVICE PARAM SET target_channels %s\r\n', targetChannels); 
     pnet(con, 'printf', 'DEVICE PARAM SET reference_channels %s\r\n', referenceChannels);
     if ~isempty(lpt_port)
         pnet(con, 'printf', 'DEVICE PARAM SET status_as_markers 1\r\n');
@@ -149,6 +147,8 @@ if strcmp(device, 'biosemi')
     if client_sends_markers
         pnet(con, 'printf', 'DEVICE PARAM SET port %s\r\n', lpt_port);
     end
+elseif strcmp(device, 'epoc')
+    pnet(con, 'printf', 'DEVICE PARAM SET target_channels %s\r\n', targetChannels); 
 end
 
 % Open the device
@@ -204,9 +204,30 @@ WaitSecs(1.0);
 % Create a list of stimuli to display
 sequence = [ones(1, num_circles) 2*ones(1, num_crosses)];
 
-% Randomize the list
-rand_idx = randperm(length(sequence));
-sequence = sequence(rand_idx);
+% Create a list of stimuli to display, making sure a rare stimulus never
+% directly follows a rare stimulus.
+if num_circles < num_crosses
+    rare = 1;
+    num_rare = num_circles;
+    frequent = 2;
+    num_frequent = num_crosses;
+else
+    rare = 2;
+    num_rare = num_crosses;
+    frequent = 1;
+    num_frequent = num_circles;
+end
+
+num_stimuli = num_crosses + num_circles;
+sequence = frequent * ones(1, num_stimuli);
+last_index = -1;
+for i = 1:num_rare
+    num_rare_to_go = num_rare - i;
+    min_index = last_index + 2;
+    max_index = num_stimuli - 2*num_rare_to_go;
+    last_index = randi([min_index, max_index]);
+    sequence(last_index) = rare;
+end
 
 % Present each stimulus in the sequence
 for i = sequence

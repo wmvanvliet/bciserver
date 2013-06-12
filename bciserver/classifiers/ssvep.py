@@ -81,11 +81,10 @@ class SSVEP(Classifier):
         if self.pipeline:
             self.window_node.reset()
 
-    def _train(self):
+    def _train(self, d):
         """ Construct and initialize pipeline, which can take some time. """
         self._construct_pipeline()
 
-        d = self.recorder.read(block=False)
         if d:
             d.save('test_data.dat')
 
@@ -96,12 +95,6 @@ class SSVEP(Classifier):
         """ Apply the classifier on a dataset. """
         if d.ninstances == 0:
             return
-        d = self.recorder.read(block=False)
-        if not d:
-            raise ClassifierException('First collect some data before training.')
-
-        # Save a snapshot of the training data to disk
-        d.save('test_data.dat')
 
         try:
             result = self.pipeline.apply(d)
@@ -109,7 +102,7 @@ class SSVEP(Classifier):
             # send result to client
             if self.engine != None:
                 for i in range(0, result.ninstances):
-                    self.engine.provide_result(result.X.ravel().tolist())
+                    self.engine.provide_result(result.X[:,i].ravel().tolist())
         except Exception as e:
             self.logger.warning('%s' % e.message)
             traceback.print_exc()

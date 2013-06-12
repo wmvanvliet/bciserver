@@ -62,10 +62,9 @@ class P300(Classifier):
         self.last_winner = -1
         self.last_repetitions_recorded = 0
 
-    def _train(self):
+    def _train(self, d):
         """ Trains on the data collected thus far. """
 
-        d = self.recorder.read(block=False)
         if not d:
             raise ClassifierException('First collect some data before training.')
 

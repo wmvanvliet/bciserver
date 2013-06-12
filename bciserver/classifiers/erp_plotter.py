@@ -37,10 +37,9 @@ class ERPPlotter(Classifier):
         self.logger.info('sample_rate: %d Hz' % recorder.sample_rate)
         self.logger.info('bandpass: %s' % bandpass)
 
-    def _train(self):
+    def _train(self, d):
         """ Trains on the data collected thus far. """
 
-        d = self.recorder.read(block=False)
         if not d:
             raise ClassifierException('First collect some data before training.')
 
