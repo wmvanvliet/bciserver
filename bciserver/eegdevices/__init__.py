@@ -28,7 +28,6 @@ available_devices = {'emulator':Emulator}
 device_errors = {}
 
 try:
-    import epoc
     from epoc_recorder import EPOC
     available_devices['epoc'] = EPOC
 except ImportError as e:

@@ -3,12 +3,11 @@ import logging
 import numpy
 import golem
 import struct
-import time
 import re
 import os
 
 from . import Recorder, precision_timer, DeviceError
-from serial_reader import SerialReader
+from background_reader import BackgroundReader
 
 class IMECNL(Recorder):
     """ 
@@ -110,7 +109,7 @@ class IMECNL(Recorder):
 
         # Set up buffers to hold data
         buffers = [bytearray(b"\x00" * self.buffer_size) for n in xrange(4)]
-        self.reader = SerialReader(self.serial, buffers)
+        self.reader = BackgroundReader(self.serial, buffers)
 
         self.droppedframeslog = open('droppedframes.log', 'w')
         self.driftlog = open('drift.log', 'w')
