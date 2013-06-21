@@ -36,15 +36,8 @@ class BackgroundReader(threading.Thread):
         # by one
         i = 0
         while(self.running):
-            if type(self.dev) == usb.core.Endpoint:
-                # USB port
-                self.buffers[i] = self.dev.read(self.buffer_size, timeout=0)
-                timestamp = precision_timer()
-                nbytes = len(self.buffers[i])
-            else:
-                # Serial port
-                nbytes = self.dev.readinto(self.buffers[i])
-                timestamp = precision_timer()
+            nbytes = self.dev.readinto(self.buffers[i])
+            timestamp = precision_timer()
 
             self.data_condition.acquire()
             self.full_buffers.append( (nbytes, timestamp, self.buffers[i]) )

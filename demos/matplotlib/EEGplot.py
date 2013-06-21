@@ -6,6 +6,7 @@ import time
 import numpy as np
 import scipy.signal
 import psychic
+import argparse
 
 class ERPPlotter():
 
@@ -50,7 +51,18 @@ class ERPPlotter():
     def show(self):
         plt.show()
 
-r = bciserver.eegdevices.Emulator(buffer_size_seconds=0.1, nchannels=32)
+parser = argparse.ArgumentParser(description='Basic EEG plotter')
+parser.add_argument('-d', '--device', metavar='emulator/biosemi/epoc', default='emulator', help='Recording device to select [emulator]')
+parser.add_argument('-b', '--bdf-file', metavar='File', default=None, help='BDF file to write data to [None]')
+args = parser.parse_args()
+
+if args.device == 'epoc':
+    r = bciserver.eegdevices.EPOC(buffer_size_seconds=0.1, bdf_file=args.bdf_file)
+elif args.device == 'biosemi':
+    r = bciserver.eegdevices.BIOSEMI(buffer_size_seconds=0.1, reference_channels=['EXG1', 'EXG2'], bdf_file=args.bdf_file)
+elif args.device == 'emulator':
+    r = bciserver.eegdevices.Emulator(buffer_size_seconds=0.1, bdf_file=args.bdf_file)
+
 r.start_capture()
 p = ERPPlotter(r)
 

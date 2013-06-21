@@ -3,6 +3,7 @@ import numpy
 import golem
 import usb.core
 import usb.util
+import array
 from Crypto.Cipher import AES
 from Crypto import Random
 
@@ -116,7 +117,9 @@ class EPOC(Recorder):
 
     def _open(self):
         self.logger.debug('Opening EPOC device...')
-        dev = usb.core.find(idVendor=0x1234, idProduct=0xed02)
+        dev = usb.core.find(idVendor=0x1234)
+        if dev == None:
+            dev = usb.core.find(idVendor=0x21A1)
         if dev == None:
             raise DeviceError('Cannot find device: is the EPOC dongle inserted?')
         serial_number = usb.util.get_string(dev, 256, dev.iSerialNumber)
@@ -126,7 +129,7 @@ class EPOC(Recorder):
         self.ep = cfg[0]
 
         # Set up buffers to hold data
-        buffers = [bytearray(b" " * int(self.buffer_size_seconds * self.sample_rate) * self.bytes_per_sample) for n in xrange(4)]
+        buffers = [array.array('B', " " * int(self.buffer_size_seconds * self.sample_rate) * self.bytes_per_sample) for n in xrange(4)]
 
         # Create reader
         self.reader = BackgroundReader(self.ep, buffers)
