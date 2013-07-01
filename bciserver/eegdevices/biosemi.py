@@ -24,7 +24,7 @@ class BIOSEMI(Recorder):
     Recorder class.
     """
 
-    def __init__(self, buffer_size_seconds=0.5, status_as_markers=False, bdf_file=None, timing_mode='begin_read_relative', port='LPT1', reference_channels=[]):
+    def __init__(self, buffer_size_seconds=0.5, status_as_markers=False, bdf_file=None, timing_mode='smoothed_sample_rate', port='LPT1', reference_channels=[]):
         """ Open the BIOSEMI device
 
         Keyword arguments:
@@ -101,7 +101,6 @@ class BIOSEMI(Recorder):
                 buffersize=self.buffer_size_bytes)
             self.timing_mode = 'fixed'
 
-
         # Configuration of the generic recorder object
         Recorder.__init__(self, buffer_size_seconds, bdf_file, timing_mode)
 
@@ -124,9 +123,6 @@ class BIOSEMI(Recorder):
         except Exception as e:
             raise DeviceError('Could not open BIOSEMI: %s' % e.message)
 
-        self.driftlog = open('drift.log', 'w')
-        self.driftlog.write('Now, Target, Obtained, Drift, Cycle\n')
-
         return self.reader.T0
 
     def stop(self):
@@ -142,24 +138,13 @@ class BIOSEMI(Recorder):
         time.sleep(time_to_wait)
 
         d = self.reader.read()
-        now = self.reader.read_time
-        diff = now - self.end_read_time
-        self.end_read_time = now
+        self.end_read_time = self.reader.read_time
 
         # Limit data to first 32 channels + external ones
         d = d[range(32) + range(256, 264), :]
         d = self._to_dataset(d)
         if d != None:
             self.nsamples += d.ninstances
-
-        # Keep track of drift: the discrepancy between the number of
-        # samples that should have been recorded by now and the number of
-        # samples that actually were.
-        target = int((self.end_read_time-self.T0) * self.sample_rate)
-        drift = target - self.nsamples
-        self.driftlog.write('%f, %d, %d, %d, %f\n' %
-                            (now, target, self.nsamples, drift, diff))
-        self.driftlog.flush()
 
         return d
 
@@ -266,7 +251,7 @@ class BIOSEMI(Recorder):
                 self.timing_mode = 'fixed'
             else:
                 self.status_as_markers = False
-                self.timing_mode = 'begin_read_relative'
+                self.timing_mode = 'smoothed_sample_rate'
             return True
 
         elif name == 'reference_channels':

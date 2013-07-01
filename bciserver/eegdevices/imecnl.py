@@ -14,7 +14,7 @@ class IMECNL(Recorder):
     Class to record from the IMEC-NL device. For more information, see the
     generic Recorder class.
     """
-    def __init__(self, port=None, buffer_size_seconds=0.5, bdf_file=None, timing_mode='begin_read_relative'):
+    def __init__(self, port=None, buffer_size_seconds=0.5, bdf_file=None, timing_mode='smoothed_sample_rate'):
         """ Open the IMEC-NL device on the given port.
 
         Keyword arguments:
@@ -111,10 +111,6 @@ class IMECNL(Recorder):
         buffers = [bytearray(b"\x00" * self.buffer_size) for n in xrange(4)]
         self.reader = BackgroundReader(self.serial, buffers)
 
-        self.droppedframeslog = open('droppedframes.log', 'w')
-        self.driftlog = open('drift.log', 'w')
-        self.driftlog.write('Now, Target, Obtained, Drift, Cycle\n')
-
         # Timestamp the beginning of the recording
         self._flush_buffer()
         T0 = self.begin_read_time
@@ -180,11 +176,6 @@ class IMECNL(Recorder):
         except AttributeError:
             pass
 
-        try:
-            self.droppedframeslog.close()
-            self.driftlog.close()
-        except AttributeError:
-            pass
 
     def _record_data(self):
         """ Read data from the device and parse it. Returns a Golem dataset. """
@@ -199,8 +190,6 @@ class IMECNL(Recorder):
         recording = None
         for length, timestamp, buf in full_buffers:
             self.end_read_time = timestamp
-            diff = self.end_read_time - self.begin_read_time
-
             data = self.remaining_data + buf[:length]
 
             # Decode as much data as possible, keep track of the data in the buffer
@@ -208,24 +197,10 @@ class IMECNL(Recorder):
             d, self.remaining_data = self._raw_to_dataset(data)
 
             if d != None:
-                self.nsamples += d.ninstances
-                self.logger.debug('dt: %.03f, samples: %d, timestamp: %.03f' % (diff, d.ninstances, timestamp))
-
                 if recording == None:
                     recording = d
                 else:
                     recording += d
-
-            # Keep track of drift: the discrepancy between the number of samples
-            # that should have been recorded by now and the number of samples that
-            # actually were.
-            now = self.end_read_time
-            target = int((now-self.T0) * self.sample_rate)
-            drift = target - self.nsamples
-            self.driftlog.write('%f, %d, %d, %d, %f\n' %
-                                (now, target, self.nsamples, drift, diff))
-            self.driftlog.flush()
-            self.logger.debug('Drift: %d' % drift)
 
             self.begin_read_time = self.end_read_time
 

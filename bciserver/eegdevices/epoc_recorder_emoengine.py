@@ -12,7 +12,7 @@ class EPOC(Recorder):
     Recorder class.
     """
 
-    def __init__(self, composer=False, buffer_size_seconds=0.5, bdf_file=None, timing_mode='begin_read_relative'):
+    def __init__(self, composer=False, buffer_size_seconds=0.5, bdf_file=None, timing_mode='smoothed_sample_rate'):
         """ Open the EPOC device or connect to EmoComposer
 
         Keyword arguments:
@@ -69,7 +69,6 @@ class EPOC(Recorder):
 
     def _reset(self):
         super(EPOC, self)._reset()
-        self.nsamples = 0
         self.begin_read_time = precision_timer()
         self.end_read_time = self.begin_read_time
 
@@ -128,22 +127,7 @@ class EPOC(Recorder):
 
         elif e.type == epoc.event.EmoStateUpdated:
             d = epoc.DataGet(self.userId)
-            now = precision_timer();
-            diff = now - self.end_read_time
-
             d = self._to_dataset(d)
-            if d != None:
-                self.nsamples += d.ninstances
-
-            # Keep track of drift: the discrepancy between the number of
-            # samples that should have been recorded by now and the number of
-            # samples that actually were.
-            target = int((self.end_read_time-self.T0) * self.sample_rate)
-            drift = target - self.nsamples
-            self.driftlog.write('%f, %d, %d, %d, %f\n' %
-                                (now, target, self.nsamples, drift, diff))
-            self.driftlog.flush()
-
             return d
 
     def _to_dataset(self, data):

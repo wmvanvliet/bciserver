@@ -47,7 +47,7 @@ class Recorder(threading.Thread):
     sample_rate the sample rate the device is recording at
     """
 
-    def __init__(self, buffer_size_seconds=0.5, bdf_file=None, timing_mode='begin_read_relative'):
+    def __init__(self, buffer_size_seconds=0.5, bdf_file=None, timing_mode='smoothed_sample_rate'):
         """
         Opens an EEG recording device for reading. Use start() to spawn a new
         thread that reads data from the device. Data is not automatically
@@ -95,6 +95,7 @@ class Recorder(threading.Thread):
         self.last_id = 0
         self.data = None
         self.capture_data = False
+        self.nsamples = 0
 
         self.marker_lock.acquire()
         self.markers = []
@@ -205,6 +206,15 @@ class Recorder(threading.Thread):
         # of the device in a circular buffer.
         self.estimated_sample_rates = collections.deque(maxlen=numpy.ceil(10/float(self.buffer_size_seconds)))
 
+        # We keep track of a 'drift table'. The first row contains the
+        # timestamps of the incomining data. The second row contains the number
+        # of samples read so far. The true samplerate of the device can be
+        # estimated by performing a linear regression on the number of samples
+        # read versus the timestamps.
+        npoints = numpy.ceil(60/float(self.buffer_size_seconds))
+        self._drift_table = [collections.deque(maxlen=npoints),
+                             collections.deque(maxlen=npoints)]
+
         # Open BDF file output
         if self.bdf_file != None:
             self.bdf_writer = psychic.BDFWriter(self.bdf_file,
@@ -268,51 +278,64 @@ class Recorder(threading.Thread):
 
         dt = self.end_read_time - self.begin_read_time
         estimated_sample_rate = nsamples / dt
-        self.estimated_sample_rates.append(estimated_sample_rate)
-        smoothed_sample_rate = numpy.mean(self.estimated_sample_rates)
+
+        #self.estimated_sample_rates.append(estimated_sample_rate)
+
+        self.nsamples += nsamples
+        self._drift_table[0].append(self.end_read_time - self.T0)
+        self._drift_table[1].append(self.nsamples)
+        smoothed_sample_rate, _ = numpy.polyfit(
+            self._drift_table[0],
+            self._drift_table[1],
+            1
+        )
 
         relative_begin_read_time = self.begin_read_time - self.T0
 
-        self.logger.debug('dt: %f, estimated sample rate: %f, smoothed sample rate: %f' % (dt, estimated_sample_rate, smoothed_sample_rate))
 
         I = numpy.atleast_2d( numpy.arange(1, nsamples+1, dtype=numpy.float ) )
 
         if self.timing_mode == 'fixed':
             t = I/float(self.sample_rate)
             t += self.last_id
-            self.last_id = t[0,-1]
 
         elif self.timing_mode == 'end_read_relative':
             t = I/float(self.sample_rate)
             t += (self.end_read_time - t[0,-1]) - self.T0
             if t[0,0] <= self.last_id:
                 t += 1/float(self.sample_rate)
-            self.last_id = t[0,-1]
 
         elif self.timing_mode == 'smoothed_sample_rate':
-            t = I/smoothed_sample_rate
+            self.logger.debug('smoothed sample rate: %.2f' % smoothed_sample_rate)
+            if len(self._drift_table[0]) < 2:
+                # Not enough samples to smooth samplerate, use rough estimate
+                t = I/float(estimated_sample_rate)
+            else:
+                t = I/smoothed_sample_rate
             t += self.last_id
-            self.last_id = t[0,-1]
 
         elif self.timing_mode == 'begin_read_relative':
             t = I/float(self.sample_rate)
             if relative_begin_read_time < self.last_id:
                 relative_begin_read_time = self.last_id
             t += relative_begin_read_time
-            self.last_id = t[0,-1]
 
         elif self.timing_mode == 'estimated_sample_rate':
             t = I/estimated_sample_rate
             if relative_begin_read_time < self.last_id:
                 relative_begin_read_time = self.last_id
             t += relative_begin_read_time
-            self.last_id = t[0,-1]
 
         else:
-            self.logger.warning('Invalid timing mode, defaulting to begin_read_relative')
-            t = I/float(self.sample_rate)
-            t += relative_begin_read_time
-            self.last_id = t[0,-1]
+            self.logger.warning('Invalid timing mode, defaulting to smoothed_sample_rate')
+            if len(self._drift_table[0]) < 2:
+                # Not enough samples to smooth samplerate, use rough estimate
+                t = I/float(estimated_sample_rate)
+            else:
+                t = I/smoothed_sample_rate
+            t += self.last_id
+
+        self.last_id = t[0,-1]
 
         return t
 

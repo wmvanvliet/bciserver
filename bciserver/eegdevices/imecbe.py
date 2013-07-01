@@ -123,8 +123,6 @@ class IMECBE(Recorder):
         self.reader = BackgroundReader(self.serial, buffers)
 
         self.droppedframeslog = open('droppedframes.log', 'w')
-        self.driftlog = open('drift.log', 'w')
-        self.driftlog.write('Now, Target, Obtained, Drift, Cycle\n')
 
         # Start the measurement
         self.serial.write(self.start_measurement_command)
@@ -205,7 +203,6 @@ class IMECBE(Recorder):
 
         try:
             self.droppedframeslog.close()
-            self.driftlog.close()
         except AttributeError:
             pass
 
@@ -222,8 +219,6 @@ class IMECBE(Recorder):
         recording = None
         for length, timestamp, buf in full_buffers:
             self.end_read_time = timestamp
-            diff = self.end_read_time - self.begin_read_time
-
             data = self.remaining_data + buf[:length]
 
             # Decode as much data as possible, keep track of the data in the buffer
@@ -231,24 +226,10 @@ class IMECBE(Recorder):
             d, self.remaining_data = self._raw_to_dataset(data)
 
             if d != None:
-                self.nsamples += d.ninstances
-                self.logger.debug('dt: %.03f, samples: %d, timestamp: %.03f' % (diff, d.ninstances, timestamp))
-
                 if recording == None:
                     recording = d
                 else:
                     recording += d
-
-            # Keep track of drift: the discrepancy between the number of samples
-            # that should have been recorded by now and the number of samples that
-            # actually were.
-            now = self.end_read_time
-            target = int((now-self.T0) * self.sample_rate)
-            drift = target - self.nsamples
-            self.driftlog.write('%f, %d, %d, %d, %f\n' %
-                                (now, target, self.nsamples, drift, diff))
-            self.driftlog.flush()
-            self.logger.debug('Drift: %d' % drift)
 
             self.begin_read_time = self.end_read_time
 

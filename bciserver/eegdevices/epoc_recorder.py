@@ -33,7 +33,7 @@ class EPOC(Recorder):
     Recorder class.
     """
 
-    def __init__(self, buffer_size_seconds=0.5, bdf_file=None, timing_mode='begin_read_relative'):
+    def __init__(self, buffer_size_seconds=0.5, bdf_file=None, timing_mode='smoothed_sample_rate'):
         """ Open the EPOC device without using the EmoEngine.
 
         Keyword arguments:
@@ -111,7 +111,6 @@ class EPOC(Recorder):
 
     def _reset(self):
         super(EPOC, self)._reset()
-        self.nsamples = 0
         self.begin_read_time = precision_timer()
         self.end_read_time = self.begin_read_time
 
@@ -134,9 +133,6 @@ class EPOC(Recorder):
         # Create reader
         self.reader = BackgroundReader(self.ep, buffers)
 
-        self.driftlog = open('drift.log', 'w')
-        self.driftlog.write('Now, Target, Obtained, Drift, Cycle\n')
-
         # Start the background reader
         self._flush_buffer()
         T0 = self.begin_read_time
@@ -152,12 +148,6 @@ class EPOC(Recorder):
         except AttributeError:
             pass
 
-        try:
-            self.droppedframeslog.close()
-            self.driftlog.close()
-        except AttributeError:
-            pass
-
     def _record_data(self):
         self.reader.data_condition.acquire()
         while len(self.reader.full_buffers) == 0 and self.running:
@@ -169,28 +159,13 @@ class EPOC(Recorder):
         recording = None
         for length, timestamp, buf in full_buffers:
             self.end_read_time = timestamp
-            diff = self.end_read_time - self.begin_read_time
 
             d = self._to_dataset(buf)
             if d != None:
-                self.nsamples += d.ninstances
-                self.logger.debug('dt: %.03f, samples: %d, timestamp: %.03f' % (diff, d.ninstances, timestamp))
-
                 if recording == None:
                     recording = d
                 else:
                     recording += d
-
-            # Keep track of drift: the discrepancy between the number of samples
-            # that should have been recorded by now and the number of samples that
-            # actually were.
-            now = self.end_read_time
-            target = int((now-self.T0) * self.sample_rate)
-            drift = target - self.nsamples
-            self.driftlog.write('%f, %d, %d, %d, %f\n' %
-                                (now, target, self.nsamples, drift, diff))
-            self.driftlog.flush()
-            self.logger.debug('Drift: %d' % drift)
 
             self.begin_read_time = self.end_read_time
 
