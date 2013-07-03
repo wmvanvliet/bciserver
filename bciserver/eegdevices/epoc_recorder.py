@@ -183,7 +183,6 @@ class EPOC(Recorder):
         """ Converts the data recorded from the EPOC device into a Golem dataset.
         """
         if data == None or len(data) == 0:
-            self.logger.warning('Data corrupt: no valid frames found in data packet')
             return None
 
         X = []

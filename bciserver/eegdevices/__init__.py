@@ -34,11 +34,22 @@ except ImportError as e:
     device_errors['epoc'] = e
 
 try:
-    import biosemi as bs
+    from epoc_recorder_emoengine import EPOC
+    available_devices['epoc-emoengine'] = EPOC
+except ImportError as e:
+    device_errors['epoc-emoengine'] = e
+
+try:
     from biosemi import BIOSEMI
     available_devices['biosemi'] = BIOSEMI
 except ImportError as e:
     device_errors['biosemi'] = e
+
+try:
+    from biosemi_labviewdll import BIOSEMI
+    available_devices['biosemi-labviewdll'] = BIOSEMI
+except ImportError as e:
+    device_errors['biosemi-labviewdll'] = e
 
 try:
     from imecbe import IMECBE

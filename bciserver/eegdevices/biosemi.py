@@ -1,16 +1,18 @@
-import biosemi_reader
 import logging
 import numpy
 import golem
 import time
-
-import wmi
-import _winreg as reg
+import array
 import struct
 
+import usb.core
+
 from . import Recorder, precision_timer, DeviceError, Marker
+from background_reader import BackgroundReader
 
 try:
+    import wmi
+    import _winreg as reg
     import ctypes
     lpt = ctypes.windll.inpout32
     lpt_error = None
@@ -18,13 +20,27 @@ except Exception as e:
     lpt = None
     lpt_error = e
 
+# Useful constants
+SYNC_BV =      0xFFFFFF00 # 0xFFFFFF00
+MK2_BV =       0x80000000 # bit 23/31
+BATTERY_BV =   0x40000000 # bit 22/30
+SPEED_BIT3 =   0x20000000 # bit 21/29
+CMS_RANGE_BV = 0x10000000 # bit 20/28
+SPEED_BIT2 =   0x08000000 # bit 19/27
+SPEED_BIT1 =   0x04000000 # bit 18/26
+SPEED_BIT0 =   0x02000000 # bit 17/25
+EPOCH_BV =     0x01000000 # bit 16/24
+numChannelsMk1 = [256, 128,  64,  32, 256, 138, 64, 32, 256]
+numChannelsMk2 = [608, 608, 608, 608, 280, 152, 88, 56, 280]
+CHUNK_SIZE = 1024
+
 class BIOSEMI(Recorder):
     """ 
     Class to record from a BIOSEMI device. For more information, see the generic
     Recorder class.
     """
 
-    def __init__(self, buffer_size_seconds=0.5, status_as_markers=False, bdf_file=None, timing_mode='smoothed_sample_rate', port='LPT1', reference_channels=[]):
+    def __init__(self, buffer_size_seconds=0.5, status_as_markers=False, bdf_file=None, timing_mode='smoothed_sample_rate', port='LPT1', reference_channels=range(32)):
         """ Open the BIOSEMI device
 
         Keyword arguments:
@@ -45,7 +61,8 @@ class BIOSEMI(Recorder):
                              status_as_markers is set to False.
 
         reference_channels:  List of integer indices or channel names indicating
-                             the channels to use as a reference.
+                             the channels to use as a reference. Defaults to
+                             the first 32 channels (CAR referencing).
         """
 
         self.sample_rate = 2048
@@ -56,7 +73,7 @@ class BIOSEMI(Recorder):
         self.digital_min = 0
         self.digital_max = 2**24
         self.gain = (self.physical_max-self.physical_min) / float(self.digital_max-self.digital_min)
-        self.buffer_size_bytes = int(280 * 4 * (buffer_size_seconds+1) * self.sample_rate)
+        self.bytes_per_sample = 280 * 4
         self.status_as_markers = status_as_markers
 
         self.logger = logging.getLogger('BIOSEMI Recorder')
@@ -69,11 +86,8 @@ class BIOSEMI(Recorder):
             'EXG1', 'EXG2', 'EXG3', 'EXG4', 'EXG5', 'EXG6', 'EXG7', 'EXG8'
         ]
 
-        print self.channel_names
-
         self.reference_channels = []
         for ch in reference_channels:
-            print ch
             if type(ch) == str:
                 self.reference_channels.append(self.channel_names.index(ch))
             elif type(ch) == int:
@@ -83,22 +97,13 @@ class BIOSEMI(Recorder):
 
         self.nreference_channels = len(self.reference_channels)
 
-
         self.feat_lab = list(self.channel_names)
         
-        if not self.status_as_markers:
-            self.reader = biosemi_reader.BiosemiReader(
-                buffersize=self.buffer_size_bytes,
-                sync=True,
-                pollInterval=1)
-        else:
+        if self.status_as_markers:
             if lpt == None:
                 raise DeviceError('Could not open inpout32.dll: %s' % lpt_error)
 
             self.lpt_address = self._get_lpt_address(port)
-
-            self.reader = biosemi_reader.BiosemiReader(
-                buffersize=self.buffer_size_bytes)
             self.timing_mode = 'fixed'
 
         # Configuration of the generic recorder object
@@ -111,68 +116,199 @@ class BIOSEMI(Recorder):
         self.nsamples = 0
         self.begin_read_time = precision_timer()
         self.end_read_time = self.begin_read_time
+        self.unfinished_frames = []
 
     def _open(self):
         self.logger.debug('Opening BIOSEMI device...')
+        dev = usb.core.find(idVendor=0x0547, idProduct=0x21A1)
+        if dev == None:
+            dev = usb.core.find(idVendor=0x0547, idProduct=0x1005)
+
+        if dev == None:
+            raise DeviceError('Cannot find device: is the Biosemi ActiveTwo plugged in?')
+
+        dev.set_configuration(1)
+        interface = dev.get_active_configuration()[(0,0)]
+        self.ep_out = interface[0]
+        self.ep_in = interface[3]
 
         if self.status_as_markers:
+            # Reset LPT pins to all zeros
             lpt.Out32(self.lpt_address, 0)
 
+        # Instruct device to start recording
         try:
-            self.reader.open()
+            buf = array.array('B', '\x00'*64)
+            self.ep_in.write(buf)
+            buf[0] = 0xFF
+            self.ep_in.write(buf)
         except Exception as e:
-            raise DeviceError('Could not open BIOSEMI: %s' % e.message)
+            raise DeviceError('Cannnot open device: %s' % e)
 
-        return self.reader.T0
+        # Record some data to determine device properties
+        try:
+            data = array.array('B', [0] * CHUNK_SIZE)
+            self.ep_out.readinto(data)
+        except Exception as e:
+            raise DeviceError('Cannnot read data: %s' % e)
+
+        data = struct.unpack('<%dI' % (len(data)/4), data)
+
+        # Analyze data to determine properties
+        for i in range(len(data)-1):
+            if data[i] == SYNC_BV and data[i+1] != SYNC_BV:
+                data = data[i:]
+                break
+        else:
+            raise DeviceError('Corrupted data.')
+
+        status = data[1]
+        self.isMk2 = bool(status & MK2_BV)
+        self.speed_mode = 0;
+        if bool(status & SPEED_BIT3): self.speed_mode += 8;
+        if bool(status & SPEED_BIT2): self.speed_mode += 4;
+        if bool(status & SPEED_BIT1): self.speed_mode += 2;
+        if bool(status & SPEED_BIT0): self.speed_mode += 1;
+        self.cmsInRange = bool(status & CMS_RANGE_BV)
+
+        if self.speed_mode < 0 or self.speed_mode > 8:
+            raise DeviceError('Unsupported speed mode discovered')
+
+        if self.isMk2:
+            maxNumChannels = numChannelsMk2[self.speed_mode]
+        else:
+            maxNumChannels = numChannelsMk1[self.speed_mode]
+
+        numChannelsAIB = 32 if (self.speed_mode == 8) else 0
+        self.stride = maxNumChannels + numChannelsAIB + 2
+        
+        if self.speed_mode in [0, 4, 8]:
+                self.sample_rate = 2048
+        elif self.speed_mode in [1, 5]:
+                self.sample_rate = 4096
+        elif self.speed_mode in [2, 6]:
+                self.sample_rate = 8192
+        elif self.speed_mode in [3, 7]:
+                self.sample_rate = 16384
+
+        # Set up buffers to hold data
+        buffer_size = int(self.buffer_size_seconds * self.sample_rate) * self.bytes_per_sample
+        buffer_size = numpy.ceil(buffer_size / float(CHUNK_SIZE)) * CHUNK_SIZE
+        buffers = [array.array('B', [0] * (buffer_size/4)) for n in xrange(4)]
+
+        # Start the background reader
+        self.reader = BackgroundReader(self.ep_out, buffers)
+        self._flush_buffer()
+        T0 = self.begin_read_time
+        self.reader.start()
+
+        return T0
 
     def stop(self):
         super(BIOSEMI, self).stop()
-        self.reader.close()
+
+        # Instruct device to stop recording
+        try:
+            buf = array.array('B', '\x00'*64)
+            self.ep_in.write(buf)
+        except:
+            # Silently fail
+            pass 
+
+        try:
+            self.reader.stop()
+            self.reader.join(2*self.buffer_size_seconds)
+        except AttributeError:
+            pass
 
     def _record_data(self):
         ''' Reads data from the BIOSEMI device and returns it as a Golem
         dataset. '''
-        self.begin_read_time = self.end_read_time
-        self.end_read_time = self.begin_read_time + self.buffer_size_seconds
-        time_to_wait = max(0, self.end_read_time - precision_timer())
-        time.sleep(time_to_wait)
 
-        d = self.reader.read()
-        self.end_read_time = self.reader.read_time
+        self.reader.data_condition.acquire()
+        while len(self.reader.full_buffers) == 0 and self.running:
+            self.reader.data_condition.wait()
+        full_buffers = list(self.reader.full_buffers)
+        self.reader.full_buffers.clear()
+        self.reader.data_condition.release()
 
-        # Limit data to first 32 channels + external ones
-        d = d[range(32) + range(256, 264), :]
-        d = self._to_dataset(d)
-        if d != None:
-            self.nsamples += d.ninstances
+        recording = None
+        for length, timestamp, buf in full_buffers:
+            self.end_read_time = timestamp
 
-        return d
+            d = self._to_dataset(buf)
+            if d != None:
+                if recording == None:
+                    recording = d
+                else:
+                    recording += d
+
+            self.begin_read_time = self.end_read_time
+
+        return recording
 
     def _to_dataset(self, data):
         """ Converts the data recorded from the BIOSEMI device into a Golem dataset.
         """
-
-        if data == None or data.size == 0:
-            self.logger.warning('Data corrupt: no valid frames found in data packet')
+        if data == None or len(data) == 0:
             return None
 
+        # Convert data from little-endian 32-bit ints to python integers
+        data = struct.unpack('<%dI' % (len(data)/4), data)
+        
+        # Prepend data recorded earlier that did not cover complete frames
+        if len(self.unfinished_frames) > 0:
+            data = self.unfinished_frames + data
+            self.unfinished_frames = []
+
+        # Check sync byte
+        if data[0] != SYNC_BV:
+            self.logger.warning('sync lost, trying to find it again')
+            for i in range(len(data)-1):
+                if data[i] == SYNC_BV and data[i+1] != SYNC_BV:
+                    self.logger.warning('signal re-synced')
+                    data = data[i:]
+                    break
+            else:
+                self.logger.warning('unable to re-sync signal, discarding data')
+                return None
+
+        # Only keep complete frames
+        samples_read = len(data) / self.stride
+        self.unfinished_frames = data[self.stride * samples_read:]
+        data = data[:self.stride * samples_read]
+
+        frames = numpy.array(data, dtype=numpy.uint32).reshape(-1, self.stride).T
+
+        # Test if sync markers line up,,
+        if len(numpy.flatnonzero(frames[0,:] != SYNC_BV)) > 0:
+            self.logger.warning('sync lost, discarding data')
+            return None
+
+        self.battery_low = len(numpy.flatnonzero(frames[1,:] & BATTERY_BV)) > 0
+        self.cms_in_range = len(numpy.flatnonzero(frames[1,:] & CMS_RANGE_BV) == 0) > 0
+
+        # Keep only first 32 channels + 8 external ones
+        frames = frames[range(1,33) + range(257, 266),:]
+        
         # Undo byte adding that the biosemi has done
-        data = (data >> 8)
+        frames = (frames >> 8)
 
         # First channel is status channel
         if self.status_as_markers:
-            Y = (data[:1,:] & 0x00ffff)
+            Y = (frames[:1,:] & 0x00ffff)
         else:
-            Y = numpy.zeros((1, data.shape[1]))
+            Y = numpy.zeros((1, frames.shape[1]))
 
-        X = data[1:,:] + (2**23) # go from signed to unsigned
-        print self.reference_channels
+        X = frames[1:,:] + (2**23) # go from signed to unsigned
 
+        # Calculate reference signal
         if len(self.reference_channels) > 0:
             REF = X[self.reference_channels,:]
 
         X = X[self.target_channels,:]
 
+        # Re-reference the signal to the chosen reference
         if len(self.reference_channels) > 0:
             X = X - numpy.tile(numpy.mean(REF, axis=0), (X.shape[0], 1))
 
@@ -183,8 +319,8 @@ class BIOSEMI(Recorder):
 
     def _flush_buffer(self):
         """ Flush data in BIOSEMI buffer """
-        self.reader.read()
-        self.begin_read_time = self.reader.read_time
+        #self.ep_out.read(self.sample_rate*self.stride*4, timeout=0)
+        self.begin_read_time = precision_timer()
 
     def _set_bdf_values(self):
         """ Set default values for the BDF Writer """
