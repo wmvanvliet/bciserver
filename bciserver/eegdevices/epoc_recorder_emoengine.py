@@ -1,7 +1,7 @@
 import epoc
 import logging
 import numpy
-import golem
+import psychic
 import time
 
 from . import Recorder, precision_timer, DeviceError
@@ -131,7 +131,7 @@ class EPOC(Recorder):
             return d
 
     def _to_dataset(self, data):
-        """ Converts the data recorded from the EPOC device into a Golem dataset.
+        """ Converts the data recorded from the EPOC device into a Psychic dataset.
         """
 
         if data == None or data.size == 0:
@@ -143,7 +143,7 @@ class EPOC(Recorder):
         I = self._estimate_timing(X.shape[1])
 
         self.logger.debug('Number of samples parsed: %d' % X.shape[1])
-        return golem.DataSet(X=X, Y=Y, I=I, feat_lab=self.feat_lab)
+        return psychic.DataSet(data=X, label=Y, ids=I, feat_lab=self.feat_lab)
 
     def _flush_buffer(self):
         """ Flush data in EPOC buffer """

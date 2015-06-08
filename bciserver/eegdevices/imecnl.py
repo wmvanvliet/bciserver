@@ -1,7 +1,7 @@
 import serial
 import logging
 import numpy
-import golem
+import psychic
 import struct
 import re
 import os
@@ -147,7 +147,7 @@ class IMECNL(Recorder):
             for i in range(10):
                 try:
                     ser = serial.serialwin32.Win32Serial(i, baudrate=self.baudrate, timeout=2*self.buffer_size_seconds)
-                except Exception as e:
+                except:
                     continue
 
                 try:
@@ -156,7 +156,7 @@ class IMECNL(Recorder):
                         return ser
                     else:
                         ser.close()
-                except Exception as e:
+                except:
                     ser.close()
                     raise
 
@@ -178,7 +178,7 @@ class IMECNL(Recorder):
 
 
     def _record_data(self):
-        """ Read data from the device and parse it. Returns a Golem dataset. """
+        """ Read data from the device and parse it. Returns a Psychic dataset. """
 
         self.reader.data_condition.acquire()
         while len(self.reader.full_buffers) == 0 and self.running:
@@ -215,7 +215,7 @@ class IMECNL(Recorder):
 
         try:
             data = serial.read( int(0.5*self.samples_per_frame*self.bytes_per_frame*self.sample_rate) )
-        except Exception as e:
+        except:
             # If anything goes wrong, give up
             return False
 
@@ -248,7 +248,7 @@ class IMECNL(Recorder):
 
     def _raw_to_dataset(self, data_string):
         """ Decodes a string of raw data read from the IMEC-NL device into a
-        Golem dataset """
+        Psychic dataset """
         num_bytes = len(data_string)
         self.logger.debug('Handling datapacket of length %d' % num_bytes)
 
@@ -340,7 +340,7 @@ class IMECNL(Recorder):
         I = self._estimate_timing(X.shape[1])
 
         self.logger.debug('Number of bytes parsed: %d' % i)
-        d = golem.DataSet(X=X, Y=Y, I=I, feat_lab=self.feat_lab)
+        d = psychic.DataSet(data=X, labels=Y, ids=I, feat_lab=self.feat_lab)
 
         return (d, data_string[i:])
 

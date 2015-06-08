@@ -1,6 +1,9 @@
-import golem, psychic
+import psychic
 import numpy
 import scipy
+
+import sklearn.svm
+import sklearn.grid_search
 
 from classifier import Classifier
 from ..bci_exceptions import ClassifierException
@@ -34,17 +37,21 @@ class P300(Classifier):
             self.mdict[i] = 'target %02d' % i
 
         # Create pipelines
-        self.preprocessing = golem.nodes.Chain([
+        self.preprocessing = psychic.nodes.Chain([
             psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(3, [bandpass[0]/(s/2.0), bandpass[1]/(s/2.0)]) ),
             psychic.nodes.Resample(self.target_sample_rate, max_marker_delay=1),
         ])
 
         self.slice_node = psychic.nodes.OnlineSlice(self.mdict, window)
 
-        self.classification = golem.nodes.Chain([
+        self.classification = psychic.nodes.Chain([
             #psychic.nodes.Blowup(100),
             psychic.nodes.Mean(axis=2),
-            golem.nodes.SVM(),
+            sklearn.grid_search.GridSearchCV(
+                sklearn.svm.LinearSVC(),
+                {'C': numpy.logspace(-3, 5, 10)},
+                cv=5,
+            )
         ])
 
         Classifier.__init__(self, engine, recorder)
@@ -61,7 +68,7 @@ class P300(Classifier):
                   + self.target_window[0]) \
                 / float(self.target_sample_rate)).tolist()
         self.repetition_labels = range(self.num_repetitions)
-        self.feat_nd_lab = [
+        self.feat_lab = [
             [self.channel_labels[i] for i in self.recorder.target_channels],
             self.time_labels,
             self.repetition_labels]
@@ -146,9 +153,10 @@ class P300(Classifier):
                 Y[1,instance] = (option_num != (target-1)) # nontarget trial
 
         # Build new dataset containing the trials
-        return golem.DataSet(X=X.reshape(-1, num_instances), Y=Y, I=I,
-                feat_shape=feat_shape, feat_dim_lab=feat_dim_lab,
-                feat_nd_lab=self.feat_nd_lab, cl_lab=['target', 'nontarget'])
+        return psychic.DataSet(data=X, labels=Y, ids=I,
+                               feat_dim_lab=feat_dim_lab,
+                               feat_lab=self.feat_lab,
+                               cl_lab=['target', 'nontarget'])
 
     def _apply(self, d):
         """ Applies classifier to a dataset. """
@@ -184,12 +192,14 @@ class P300(Classifier):
             ndX[:,:,:,cl] = d.get_class(cl).ndX[:,:,:repetitions_recorded]
 
         # Update feature labels
-        feat_nd_lab = list(self.feat_nd_lab)
-        feat_nd_lab[2] = range(repetitions_recorded)
+        feat_lab = list(self.feat_lab)
+        feat_lab[2] = range(repetitions_recorded)
 
-        d = golem.DataSet(ndX=ndX, Y=Y, I=I, feat_dim_lab=feat_dim_lab,
-                feat_nd_lab=feat_nd_lab, cl_lab=['target', 'nontarget'],
-                default=d)
+        d = psychic.DataSet(data=ndX, labels=Y, ids=I,
+                            feat_dim_lab=feat_dim_lab,
+                            feat_lab=feat_lab,
+                            cl_lab=['target', 'nontarget'],
+                            default=d)
 
         # Perform actual classification
         try:
@@ -208,7 +218,6 @@ class P300(Classifier):
 
     def _generate_debug_image(self, d):
         """ Generate image describing the training data. """
-
         fig = psychic.plot_erp(d)
         fig.set_size_inches(7,11)
         return fig

@@ -1,6 +1,6 @@
 import logging
 import numpy
-import golem
+import psychic
 import usb.core
 import usb.util
 import array
@@ -180,7 +180,7 @@ class EPOC(Recorder):
         return level
 
     def _to_dataset(self, data):
-        """ Converts the data recorded from the EPOC device into a Golem dataset.
+        """ Converts the data recorded from the EPOC device into a Psychic dataset.
         """
         if data == None or len(data) == 0:
             return None
@@ -196,7 +196,7 @@ class EPOC(Recorder):
         I = self._estimate_timing(X.shape[1])
 
         self.logger.debug('Number of samples parsed: %d' % X.shape[1])
-        return golem.DataSet(X=X, Y=Y, I=I, feat_lab=self.feat_lab)
+        return psychic.DataSet(data=X, labels=Y, ids=I, feat_lab=self.feat_lab)
 
 
     def _flush_buffer(self):

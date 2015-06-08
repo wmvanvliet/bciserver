@@ -1,7 +1,4 @@
-import matplotlib
-import matplotlib.pyplot as plt
-
-import golem, psychic
+import psychic
 import numpy
 import scipy
 
@@ -26,7 +23,7 @@ class ERPPlotter(Classifier):
 
         # Create pipeline
         self.bp_node = psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(3, [bandpass[0]/(s/2.0), bandpass[1]/(s/2.0)]) )
-        self.preprocessing = golem.nodes.Chain([self.bp_node])
+        self.preprocessing = psychic.nodes.Chain([self.bp_node])
 
         self.window = window
         self.cl_lab = None
@@ -52,13 +49,13 @@ class ERPPlotter(Classifier):
         self.feat_lab = d.feat_lab
 
         mdict = {}
-        for i in numpy.unique(d.Y):
+        for i in numpy.unique(d.labels):
             if i == 0:
                 continue
             mdict[i] = 'target %02d' % i
 
         self.slice_node = psychic.nodes.OnlineSlice(mdict, self.window)
-        d = self.slice_node.train_apply(d,d)
+        d = self.slice_node.train_apply(d)
 
         # Send a debug plot to Unity
         self._send_debug_image(d)
@@ -73,9 +70,9 @@ class ERPPlotter(Classifier):
     
     def _generate_debug_image(self, d):
         """ Generate image describing the training data. """
-        d = golem.DataSet(cl_lab=self.cl_lab, default=d)
-        fig = psychic.plot_erp(d, self.recorder.sample_rate, enforce_equal_n=False)
-        fig.set_size_inches(7,11)
+        d = psychic.DataSet(cl_lab=self.cl_lab, default=d)
+        fig = psychic.plot_erp(d, enforce_equal_n=False)
+        fig.set_size_inches(7, 11)
         return fig
 
     def set_parameter(self, name, value):

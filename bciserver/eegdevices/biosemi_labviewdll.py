@@ -1,7 +1,7 @@
 import biosemi_reader
 import logging
 import numpy
-import golem
+import psychic
 import time
 
 import wmi
@@ -130,7 +130,7 @@ class BIOSEMI(Recorder):
         self.reader.close()
 
     def _record_data(self):
-        ''' Reads data from the BIOSEMI device and returns it as a Golem
+        ''' Reads data from the BIOSEMI device and returns it as a Psychic
         dataset. '''
         self.begin_read_time = self.end_read_time
         self.end_read_time = self.begin_read_time + self.buffer_size_seconds
@@ -149,7 +149,7 @@ class BIOSEMI(Recorder):
         return d
 
     def _to_dataset(self, data):
-        """ Converts the data recorded from the BIOSEMI device into a Golem dataset.
+        """ Converts the data recorded from the BIOSEMI device into a Psychic dataset.
         """
 
         if data == None or data.size == 0:
@@ -179,7 +179,7 @@ class BIOSEMI(Recorder):
         I = self._estimate_timing(X.shape[1])
 
         self.logger.debug('Number of samples parsed: %d' % X.shape[1])
-        return golem.DataSet(X=X, Y=Y, I=I, feat_lab=self.feat_lab)
+        return psychic.DataSet(data=X, labels=Y, ids=I, feat_lab=self.feat_lab)
 
     def _flush_buffer(self):
         """ Flush data in BIOSEMI buffer """

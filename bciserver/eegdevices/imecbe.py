@@ -1,7 +1,7 @@
 import serial
 import logging
 import numpy
-import golem
+import psychic
 import re
 import os
 
@@ -207,7 +207,7 @@ class IMECBE(Recorder):
             pass
 
     def _record_data(self):
-        """ Read data from the device and parse it. Returns a Golem dataset. """
+        """ Read data from the device and parse it. Returns a Psychic dataset. """
 
         self.reader.data_condition.acquire()
         while len(self.reader.full_buffers) == 0 and self.running:
@@ -236,7 +236,7 @@ class IMECBE(Recorder):
         return recording
 
     def _raw_to_dataset(self, data):
-        """ Decodes a string of raw data read from the IMEC device into a Golem
+        """ Decodes a string of raw data read from the IMEC device into a Psychic
         dataset """
         num_bytes = len(data)
         self.logger.debug('Handling datapacket of length %d' % num_bytes)
@@ -338,7 +338,7 @@ class IMECBE(Recorder):
         I = self._estimate_timing(X.shape[1])
 
         self.logger.debug('Number of bytes parsed: %d' % i)
-        d = golem.DataSet(X=X, Y=Y, I=I, feat_lab=self.feat_lab)
+        d = psychic.DataSet(data=X, labels=Y, ids=I, feat_lab=self.feat_lab)
 
         return (d, data[i:])
 

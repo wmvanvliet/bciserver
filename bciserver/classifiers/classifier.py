@@ -190,9 +190,16 @@ class Classifier(threading.Thread):
             self.join()
         self.logger.info('Classifier stopped')
 
+    def _generate_debug_image(self, d):
+        """ Override this to make your classifier generate an image that is
+        send to the client after training is complete. """
+        return None
+
     def _send_debug_image(self, d):
         """ Send a PNG image describing the training data to client. """
         fig = self._generate_debug_image(d)
+        if fig is None:
+            return
 
         # Save a snapshot to disk
         fig.savefig('classifier_output.png', format='png')

@@ -1,8 +1,9 @@
-import golem, psychic
+import psychic
 import numpy
 import scipy
-import cStringIO
-import base64
+
+import sklearn.svm
+import sklearn.grid_search
 
 from ..classifier import Classifier
 from ..bci_exceptions import ClassifierException
@@ -39,11 +40,14 @@ class P300(Classifier):
         # Create pipeline
         self.bp_node = psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(3, [bandpass[0]/(s/2.0), bandpass[1]/(s/2.0)]) )
         self.resample_node = psychic.nodes.Resample(self.target_sample_rate, max_marker_delay=1)
-        self.lda_node = golem.nodes.LDA()
-        self.svm_node = golem.nodes.SVM(c=2)
+        self.svm_node = sklearn.grid_search.GridSearchCV(
+            sklearn.svm.LinearSVC(),
+            {'C': numpy.logspace(-3, 5, 10)},
+            cv=5,
+        )
         self.slice_node = psychic.nodes.OnlineSlice(self.mdict, window)
-        self.preprocessing = golem.nodes.Chain([self.bp_node, self.resample_node])
-        self.classification = golem.nodes.Chain([self.svm_node])
+        self.preprocessing = psychic.nodes.Chain([self.bp_node, self.resample_node])
+        self.classification = psychic.nodes.Chain([self.svm_node])
 
         Classifier.__init__(self, engine, recorder)
 
@@ -140,7 +144,9 @@ class P300(Classifier):
                 Y[1,instance] = (option_num != (target-1)) # nontarget trial
 
         # Build new dataset containing the trials
-        return golem.DataSet(X=X.reshape(-1, num_instances), Y=Y, I=I, feat_shape=feat_shape, feat_dim_lab=feat_dim_lab,cl_lab=['target', 'nontarget'])
+        return psychic.DataSet(data=X, labels=Y, ids=I,
+                               feat_dim_lab=feat_dim_lab,
+                               l_lab=['target', 'nontarget'])
 
     def _apply(self, d):
         """ Applies classifier to a dataset. """
@@ -170,7 +176,7 @@ class P300(Classifier):
 
         # Perform actual classification
         try:
-            result = self.classification.apply(d).X
+            result = self.classification.apply(d).data
 
             candidates = numpy.flatnonzero( numpy.argmax(result, axis=0) == 0 )
             if len(candidates) > 0:
@@ -199,20 +205,12 @@ class P300(Classifier):
         except ValueError as e:
             self.logger.error('Classification failed: %s' % e)
     
-
-    def _send_debug_image(self, d):
-        """ Send a PNG image describing the training data to client. """
-
-        self.logger.info('Sending debug plot to client')
-        fig = psychic.plot_erp(d)
-        fig.set_size_inches(7,11)
-
-        # Save a snapshot to disk
-        fig.savefig('classifier_output.png', format='png')
-
-        buf = cStringIO.StringIO()
-        fig.savefig(buf, format='png')
-        self.engine.provide_result( ['training-result', base64.b64encode(buf.getvalue())] )
+    def _generate_debug_image(self, d):
+        """ Generate image describing the training data. """
+        d = psychic.DataSet(cl_lab=self.cl_lab, default=d)
+        fig = psychic.plot_erp(d, enforce_equal_n=False)
+        fig.set_size_inches(7, 11)
+        return fig
 
     def set_parameter(self, name, value):
         if name == 'num_repetitions':

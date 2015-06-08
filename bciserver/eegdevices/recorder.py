@@ -1,6 +1,5 @@
 ﻿import threading
 import time
-import golem
 import psychic
 import numpy
 import logging
@@ -30,7 +29,7 @@ class Recorder(threading.Thread):
     Launches a separate thread that continuously reads data from a connected
     EEG device. After you have completed all your initialization and are ready
     to process the data, use start_capture() to make the recorder start
-    offering the data as Golem datasets.
+    offering the data as Psychic datasets.
 
     Example usage:
     >>> r = Emulator(buffer_size_seconds=0.5)
@@ -104,7 +103,7 @@ class Recorder(threading.Thread):
 
     def read(self, block=True, flush=True):
         """
-        Reads available data from the device. Returns a Golem dataset or null
+        Reads available data from the device. Returns a Psychic dataset or null
         if no data is available at this time.
 
         block - whether to block until data is available
@@ -254,8 +253,8 @@ class Recorder(threading.Thread):
                 if self.capture_data:
                     # Apply gain factor to data, producing values that
                     # correspond to actual voltage
-                    d = golem.DataSet(X=d.X*self.gain+self.physical_min,
-                                      default=d)
+                    d = psychic.DataSet(d.data*self.gain+self.physical_min,
+                                        default=d)
 
                     # Append the data to the buffer and notify
                     # any listeners (usually the classifier)
@@ -389,7 +388,7 @@ class Recorder(threading.Thread):
 
         self.marker_lock.release()
 
-        return golem.DataSet(Y=Y, default=d)
+        return psychic.DataSet(labels=Y, default=d)
 
     def set_parameter(self, name, values):
         if name == 'bdf_file':

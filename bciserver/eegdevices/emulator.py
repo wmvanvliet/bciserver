@@ -1,6 +1,5 @@
 import logging
 import numpy
-import golem
 import psychic
 import time
 from . import Recorder, precision_timer, DeviceError
@@ -152,7 +151,7 @@ class Emulator(Recorder):
             Y = numpy.zeros((1, nsamples))
 
         I = self._estimate_timing(X.shape[1])
-        d = golem.DataSet(X=X, Y=Y, I=I, feat_lab=feat_lab)
+        d = psychic.DataSet(data=X, labels=Y, ids=I, feat_lab=feat_lab)
         self.nsamples += d.ninstances
 
         return d

@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-import golem, psychic
+import psychic
 import numpy as np
 import scipy
 
@@ -39,13 +39,13 @@ class ERD(Classifier):
     def _construct_pipeline(self):
         self.logger.info('Creating pipeline')
 
-        self.classification = golem.nodes.Chain([
+        self.classification = psychic.nodes.Chain([
             psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(2, [self.bandpass[0]/(s/2.0), self.bandpass[1]/(s/2.0)]) ),
             psychic.nodes.Resample(self.target_sample_rate, max_marker_delay=1),
             psychic.nodes.OnlineSlidingWindow(int(self.window_size*self.target_sample_rate), int(self.window_step*self.target_sample_rate)),
-            psychic.nodes.spatialfilter.ICA(self.ncomp),
-            golem.nodes.FeatMap(lambda x: np.log(np.var(x, axis=1))),
-            golem.nodes.LDA(),
+            psychic.nodes.spatialfilter.CSP(self.ncomp),
+            psychic.nodes.FeatMap(lambda x: np.log(np.var(x, axis=1))),
+            psychic.nodes.LDA(),
         ])
 
     def _reset(self):
@@ -73,21 +73,12 @@ class ERD(Classifier):
         Y[1,:] = (d.Y == 2)[0,:]
         Y[2,:] = (d.Y == 3)[0,:]
 
-        d = golem.DataSet(Y=Y, cl_lab=['on','off', 'sweep'], default=d)
+        d = psychic.DataSet(labels=Y, cl_lab=['on','off', 'sweep'], default=d)
 
         self._construct_pipeline()
 
         # Train the pipeline
-        d2 = self.preprocessing.train_apply(d,d)
-
-        try:
-            d2 = self.ica_node.train_apply(d.get_class(0), d2)
-            self.pipeline = self.pipeline_ica
-        except Exception as e:
-            self.logger.warning('Could not train ICA: %s' % e.message)
-            self.pipeline = self.pipeline_no_ica
-    
-        self.classification.train(d2)
+        self.classification.train(d)
         self.logger.info('Training complete')
 
         # Send a debug plot to client
@@ -105,11 +96,11 @@ class ERD(Classifier):
 
         try:
             result = self.pipeline.apply(d)
-            self.logger.debug('Result was: %s:%s at %s' % (result.xs[:,0], result.ys[:,0], result.ids))
+            self.logger.debug('Result was: %s:%s at %s' % (result.data[:,0], result.labels[:,0], result.ids))
             # send result to client
             if self.engine != None:
-                for i in range(0, result.ys.shape[0]):
-                    self.engine.provide_result([result.xs[i,0], int(result.ys[i,0])])
+                for i in range(0, result.labels.shape[0]):
+                    self.engine.provide_result([result.data[i,0], int(result.labels[i,0])])
         except Exception as e:
             self.logger.warning('%s' % e.message)
 

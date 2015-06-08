@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-import golem, psychic
+import psychic
 import scipy
 import scipy.signal
 import traceback
@@ -72,7 +72,10 @@ class SSVEP(Classifier):
         self.resample_node.old_samplerate = self.recorder.sample_rate
         self.classifier_node.train_(None)
         
-        self.pipeline = golem.nodes.Chain([self.bp_node, self.resample_node, self.window_node, self.classifier_node])
+        self.pipeline = psychic.nodes.Chain([self.bp_node,
+                                             self.resample_node,
+                                             self.window_node,
+                                             self.classifier_node])
 
     def _reset(self):
         """ Reset the classifier. Flushes all collected data."""
@@ -98,11 +101,11 @@ class SSVEP(Classifier):
 
         try:
             result = self.pipeline.apply(d)
-            self.logger.debug('Result was: %s at %s' % (result.X.ravel(), result.I))
+            self.logger.debug('Result was: %s at %s' % (result.data.ravel(), result.ids))
             # send result to client
             if self.engine != None:
                 for i in range(0, result.ninstances):
-                    self.engine.provide_result(result.X[:,i].ravel().tolist())
+                    self.engine.provide_result(result.data[:,i].ravel().tolist())
         except Exception as e:
             self.logger.warning('%s' % e.message)
             traceback.print_exc()

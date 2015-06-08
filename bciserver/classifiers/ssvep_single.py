@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-import golem, psychic
+import psychic
 import numpy as np
 import scipy
 
@@ -50,15 +50,15 @@ class SSVEPSingle(Classifier):
         self.logger.info('Creating pipeline')
         self.bp_node = psychic.nodes.OnlineFilter( lambda s : scipy.signal.iirfilter(4, [self.bandpass[0]/(s/2.0), self.bandpass[1]/(s/2.0)]) )
         self.resample_node = psychic.nodes.Resample(self.target_sample_rate, max_marker_delay=1)
-        self.ica_node = golem.nodes.ICA()
+        self.ica_node = psychic.nodes.ICA()
         self.window_node = psychic.nodes.OnlineSlidingWindow(int(self.window_size*self.target_sample_rate), int(self.window_step*self.target_sample_rate), ref_point=1.0)
         self.slic_node = psychic.nodes.SLIC(self.target_sample_rate, [self.freq])
-        self.thres_node = golem.nodes.Threshold([0,1],feature=0)
+        self.thres_node = psychic.nodes.Threshold([0,1],feature=0)
 
-        self.preprocessing = golem.nodes.Chain([self.bp_node, self.resample_node])
-        self.classification = golem.nodes.Chain([self.window_node, self.slic_node])
-        self.pipeline_ica = golem.nodes.Chain([self.preprocessing, self.ica_node, self.classification])
-        self.pipeline_no_ica = golem.nodes.Chain([self.preprocessing, self.classification])
+        self.preprocessing = psychic.nodes.Chain([self.bp_node, self.resample_node])
+        self.classification = psychic.nodes.Chain([self.window_node, self.slic_node])
+        self.pipeline_ica = psychic.nodes.Chain([self.preprocessing, self.ica_node, self.classification])
+        self.pipeline_no_ica = psychic.nodes.Chain([self.preprocessing, self.classification])
 
     def _reset(self):
         """ Reset the classifier. Flushes all collected data."""
@@ -84,7 +84,7 @@ class SSVEPSingle(Classifier):
         Y[1,:] = (d.Y == 2)[0,:]
         Y[2,:] = (d.Y == 3)[0,:]
 
-        d = golem.DataSet(Y=Y, cl_lab=['on','off', 'sweep'], default=d)
+        d = psychic.DataSet(labels=Y, cl_lab=['on','off', 'sweep'], default=d)
 
         self._construct_pipeline()
 
@@ -120,11 +120,11 @@ class SSVEPSingle(Classifier):
         try:
             result = self.pipeline.apply(d)
             cl = self.thres_node.apply(result)
-            self.logger.debug('Result was: %s:%s at %s' % (result.X[0,:], cl.xs[0,:], result.I))
+            self.logger.debug('Result was: %s:%s at %s' % (result.data[0,:], cl.data[0,:], result.I))
             # send result to client
             if self.engine != None:
                 for i in range(0, cl.ninstances):
-                    self.engine.provide_result([result.X[0,i], int(cl.X[0,i])])
+                    self.engine.provide_result([result.data[0,i], int(cl.data[0,i])])
         except Exception as e:
             self.logger.warning('%s' % e.message)
 
